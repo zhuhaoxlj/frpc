@@ -71,8 +71,9 @@ export const getInitialIpv6OnlyNetwork = (): boolean => {
 
 export const getInitialShowTitleBar = (): boolean => {
   if (typeof window === "undefined") return false;
+  const isMacOS = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
   const stored = localStorage.getItem("showTitleBar");
-  if (stored === null) return false;
+  if (stored === null) return !isMacOS;
   return stored === "true";
 };
 

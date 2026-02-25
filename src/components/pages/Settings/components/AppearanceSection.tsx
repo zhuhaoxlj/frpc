@@ -17,6 +17,7 @@ import type { MutableRefObject } from "react";
 
 interface AppearanceSectionProps {
   isMacOS: boolean;
+  isWindows: boolean;
   followSystem: boolean;
   setFollowSystem: (value: boolean) => void;
   theme: ThemeMode;
@@ -46,6 +47,7 @@ interface AppearanceSectionProps {
 
 export function AppearanceSection({
   isMacOS,
+  isWindows,
   followSystem,
   setFollowSystem,
   theme,
@@ -216,15 +218,16 @@ export function AppearanceSection({
           </ItemActions>
         </Item>
 
-        {/* 只在 macOS 上显示顶部栏开关，悬浮菜单模式下隐藏 */}
-        {isMacOS && sidebarMode === "classic" && (
+        {(isMacOS || isWindows) && sidebarMode === "classic" && (
           <>
             <ItemSeparator />
             <Item variant="outline" className="border-0">
               <ItemContent>
                 <ItemTitle>显示顶部栏</ItemTitle>
                 <ItemDescription className="text-xs">
-                  显示顶部标题栏（关闭时，三色按钮将显示在侧边栏顶部）
+                  {isMacOS
+                    ? "显示顶部标题栏（关闭时，三色按钮将显示在侧边栏顶部）"
+                    : "显示顶部标题栏（关闭时，窗口按钮将显示在右上角空白处）"}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>

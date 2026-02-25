@@ -34,6 +34,9 @@ export function Settings() {
   const isMacOS =
     typeof navigator !== "undefined" &&
     navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+  const isWindows =
+    typeof navigator !== "undefined" &&
+    navigator.platform.toUpperCase().indexOf("WIN") >= 0;
 
   const {
     followSystem,
@@ -226,6 +229,7 @@ export function Settings() {
       <div className="flex-1 overflow-auto space-y-6">
         <AppearanceSection
           isMacOS={isMacOS}
+          isWindows={isWindows}
           followSystem={followSystem}
           setFollowSystem={setFollowSystem}
           theme={theme}
