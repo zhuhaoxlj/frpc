@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { Sidebar } from "@/components/Sidebar";
-import { TitleBar } from "@/components/TitleBar";
+import { TitleBar, WindowControls } from "@/components/TitleBar";
 import { Home } from "@/components/pages/Home";
 import { TunnelList } from "@/components/pages/TunnelList";
 import { Logs } from "@/components/pages/Logs";
@@ -27,10 +27,16 @@ import type { SidebarMode } from "@/components/pages/Settings/types";
 function App() {
   const [activeTab, setActiveTab] = useState("home");
   const [user, setUser] = useState<StoredUser | null>(() => getStoredUser());
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => true);
+  const initialSidebarMode = getInitialSidebarMode();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() =>
+    initialSidebarMode !== "classic",
+  );
   const isMacOS =
     typeof navigator !== "undefined" &&
     navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+  const isWindows =
+    typeof navigator !== "undefined" &&
+    navigator.platform.toUpperCase().indexOf("WIN") >= 0;
 
   // Hooks
   useAppTheme();
@@ -38,6 +44,13 @@ function App() {
     useWindowEvents();
   const { showTitleBar } = useTitleBar();
 
+  const shouldShowTitleBar = isMacOS
+    ? showTitleBar
+    : isWindows
+      ? showTitleBar
+      : true;
+  const isTitleBarHidden = (isMacOS || isWindows) && !showTitleBar;
+  const shouldPadTop = shouldShowTitleBar || (isWindows && !showTitleBar);
   const SIDEBAR_LEFT = isMacOS && !showTitleBar ? 10 : 15; // px
   const SIDEBAR_COLLAPSED_WIDTH = Math.round(((20 * 5) / 3) * 2);
   const appContainerRef = useRef<HTMLDivElement>(null);
@@ -64,12 +77,14 @@ function App() {
   const [isDownloadingUpdate, setIsDownloadingUpdate] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() =>
-    getInitialSidebarMode(),
+    initialSidebarMode,
   );
 
   useEffect(() => {
     const handleSidebarModeChange = () => {
-      setSidebarMode(getInitialSidebarMode());
+      const nextMode = getInitialSidebarMode();
+      setSidebarMode(nextMode);
+      setSidebarCollapsed(nextMode !== "classic");
     };
     window.addEventListener("sidebarModeChanged", handleSidebarModeChange);
     return () =>
@@ -176,24 +191,31 @@ function App() {
           onVideoError={handleVideoError}
           onVideoLoadedData={handleVideoLoadedData}
         />
-        {(!isMacOS || showTitleBar) && (
+        {shouldShowTitleBar && (
           <div className="relative z-50">
             <TitleBar />
           </div>
         )}
-        {sidebarMode === "floating" ? (
+        {isWindows && !showTitleBar ? (
+          <div
+            data-tauri-drag-region
+            className="absolute top-0 right-0 left-0 z-50 h-9 flex items-center justify-end pr-2"
+          >
+            <WindowControls />
+          </div>
+        ) : null}
+        {sidebarMode === "floating" || sidebarMode === "floating_fixed" ? (
           <>
             {/* 悬浮侧边栏 - 绝对定位，占满窗口高度 */}
             <div
               className="absolute z-50"
               style={{
                 left: `${SIDEBAR_LEFT}px`,
-                top:
-                  isMacOS && !showTitleBar
+                top: isTitleBarHidden
+                  ? isMacOS
                     ? "10px"
-                    : !isMacOS || showTitleBar
-                      ? "48px"
-                      : "12px",
+                    : "12px"
+                  : "48px",
                 bottom: "12px",
               }}
             >
@@ -205,7 +227,7 @@ function App() {
                 collapsed={sidebarCollapsed}
                 onCollapseChange={setSidebarCollapsed}
                 collapsedWidth={SIDEBAR_COLLAPSED_WIDTH}
-                mode="floating"
+                mode={sidebarMode}
               />
             </div>
 
@@ -215,7 +237,7 @@ function App() {
               style={{
                 left: `${SIDEBAR_LEFT + SIDEBAR_COLLAPSED_WIDTH}px`,
                 right: "0",
-                top: !isMacOS || showTitleBar ? "36px" : "0",
+                top: shouldPadTop ? "36px" : "0",
                 bottom: "0",
               }}
             >
@@ -250,7 +272,7 @@ function App() {
                 />
               ) : null}
               <div
-                className={`flex-1 overflow-auto px-6 pb-6 md:px-8 md:pb-8 ${!isMacOS || showTitleBar ? "pt-4 md:pt-6" : "pt-0"}`}
+                className={`flex-1 overflow-auto px-6 pb-6 md:px-8 md:pb-8 ${shouldPadTop ? "pt-4 md:pt-6" : "pt-0"}`}
               >
                 <div className="max-w-6xl mx-auto w-full h-full">
                   <div className="h-full flex flex-col">{content}</div>

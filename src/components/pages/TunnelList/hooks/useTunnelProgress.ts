@@ -40,6 +40,7 @@ export function useTunnelProgress(
   const playedSoundRef = useRef<Set<string>>(new Set());
   const processedLogsCountRef = useRef<number>(0);
   const loggedSuccessRef = useRef<Set<number>>(new Set());
+  const duplicateFixAttemptsRef = useRef<Map<number, number>>(new Map());
 
   const handleDuplicateTunnelError = useCallback(
     async (tunnelId: number, tunnelName: string) => {
@@ -49,10 +50,34 @@ export function useTunnelProgress(
         return;
       }
 
+      let cleanedTunnelName = tunnelName?.trim() || "";
+      cleanedTunnelName = cleanedTunnelName.replace(/^\*\*\*TOKEN\*\*\*\./, "");
+
+      if (!cleanedTunnelName || cleanedTunnelName === "") {
+        console.error("隧道名称为空，无法修复", {
+          tunnelId,
+          tunnelName,
+          cleanedTunnelName,
+        });
+        toast.error("无法获取隧道名称，请手动处理");
+        setFixingTunnels((prev) => {
+          const next = new Set(prev);
+          next.delete(tunnelId);
+          return next;
+        });
+        return;
+      }
+
       if (fixingTunnels.has(tunnelId)) {
         return;
       }
 
+      const attempts = duplicateFixAttemptsRef.current.get(tunnelId) || 0;
+      if (attempts >= 1) {
+        return;
+      }
+
+      duplicateFixAttemptsRef.current.set(tunnelId, attempts + 1);
       setFixingTunnels((prev) => new Set(prev).add(tunnelId));
 
       const timestamp = new Date()
@@ -77,24 +102,6 @@ export function useTunnelProgress(
       toast.info("隧道重复启动导致隧道启动失败，自动修复中....", {
         duration: 10000,
       });
-
-      let cleanedTunnelName = tunnelName?.trim() || "";
-      cleanedTunnelName = cleanedTunnelName.replace(/^\*\*\*TOKEN\*\*\*\./, "");
-
-      if (!cleanedTunnelName || cleanedTunnelName === "") {
-        console.error("隧道名称为空，无法修复", {
-          tunnelId,
-          tunnelName,
-          cleanedTunnelName,
-        });
-        toast.error("无法获取隧道名称，请手动处理");
-        setFixingTunnels((prev) => {
-          const next = new Set(prev);
-          next.delete(tunnelId);
-          return next;
-        });
-        return;
-      }
 
       try {
         await offlineTunnel(cleanedTunnelName, user.usertoken);

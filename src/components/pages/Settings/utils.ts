@@ -71,8 +71,9 @@ export const getInitialIpv6OnlyNetwork = (): boolean => {
 
 export const getInitialShowTitleBar = (): boolean => {
   if (typeof window === "undefined") return false;
+  const isMacOS = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
   const stored = localStorage.getItem("showTitleBar");
-  if (stored === null) return false;
+  if (stored === null) return !isMacOS;
   return stored === "true";
 };
 
@@ -154,7 +155,12 @@ export const getInitialVideoVolume = (): number => {
 export const getInitialSidebarMode = (): SidebarMode => {
   if (typeof window === "undefined") return "classic";
   const stored = localStorage.getItem("sidebarMode") as SidebarMode | null;
-  if (stored === "classic" || stored === "floating") return stored;
+  if (
+    stored === "classic" ||
+    stored === "floating" ||
+    stored === "floating_fixed"
+  )
+    return stored;
   return "classic";
 };
 

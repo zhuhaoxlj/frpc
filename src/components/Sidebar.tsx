@@ -44,8 +44,9 @@ export function Sidebar({
 }: SidebarProps) {
   const [showTitleBar, setShowTitleBar] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
+    const isMacOS = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
     const stored = localStorage.getItem("showTitleBar");
-    if (stored === null) return false;
+    if (stored === null) return !isMacOS;
     return stored === "true";
   });
 
@@ -208,9 +209,18 @@ export function Sidebar({
     };
   }, []);
 
-  // 悬浮菜单收起时自动关闭用户菜单
   useEffect(() => {
-    if (mode === "floating" && collapsed && userMenuOpen) {
+    if (mode === "floating_fixed" && !collapsed) {
+      if (isControlled) {
+        onCollapseChangeProp?.(true);
+      } else {
+        setInternalCollapsed(true);
+      }
+    }
+  }, [collapsed, isControlled, mode, onCollapseChangeProp]);
+
+  useEffect(() => {
+    if (mode !== "classic" && collapsed && userMenuOpen) {
       setUserMenuOpen(false);
     }
   }, [collapsed, mode, userMenuOpen]);

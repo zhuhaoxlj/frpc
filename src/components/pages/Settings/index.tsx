@@ -34,6 +34,9 @@ export function Settings() {
   const isMacOS =
     typeof navigator !== "undefined" &&
     navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+  const isWindows =
+    typeof navigator !== "undefined" &&
+    navigator.platform.toUpperCase().indexOf("WIN") >= 0;
 
   const {
     followSystem,
@@ -162,7 +165,10 @@ export function Settings() {
       localStorage.setItem("sidebarMode", newMode);
       window.dispatchEvent(new Event("sidebarModeChanged"));
 
-      if (newMode === "floating" && !showTitleBar) {
+      if (
+        (newMode === "floating" || newMode === "floating_fixed") &&
+        !showTitleBar
+      ) {
         setShowTitleBar(true);
         localStorage.setItem("showTitleBar", "true");
         window.dispatchEvent(new Event("titleBarVisibilityChanged"));
@@ -223,6 +229,7 @@ export function Settings() {
       <div className="flex-1 overflow-auto space-y-6">
         <AppearanceSection
           isMacOS={isMacOS}
+          isWindows={isWindows}
           followSystem={followSystem}
           setFollowSystem={setFollowSystem}
           theme={theme}

@@ -86,7 +86,7 @@ export class FrpcManager {
       local_ip: tunnel.localip,
       local_port: tunnel.nport,
       remote_port:
-        tunnel.type === "tcp"
+        tunnel.type === "tcp" || tunnel.type === "udp"
           ? tunnel.dorp
             ? parseInt(tunnel.dorp)
             : undefined

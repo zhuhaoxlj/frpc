@@ -17,6 +17,7 @@ import type { MutableRefObject } from "react";
 
 interface AppearanceSectionProps {
   isMacOS: boolean;
+  isWindows: boolean;
   followSystem: boolean;
   setFollowSystem: (value: boolean) => void;
   theme: ThemeMode;
@@ -46,6 +47,7 @@ interface AppearanceSectionProps {
 
 export function AppearanceSection({
   isMacOS,
+  isWindows,
   followSystem,
   setFollowSystem,
   theme,
@@ -205,7 +207,8 @@ export function AppearanceSection({
             <Select
               options={[
                 { value: "classic", label: "经典 (默认)" },
-                { value: "floating", label: "悬浮" },
+                { value: "floating", label: "悬浮（展开）" },
+                { value: "floating_fixed", label: "悬浮（固定）" },
               ]}
               value={sidebarMode}
               onChange={(value) => setSidebarMode(value as SidebarMode)}
@@ -215,15 +218,16 @@ export function AppearanceSection({
           </ItemActions>
         </Item>
 
-        {/* 只在 macOS 上显示顶部栏开关，悬浮菜单模式下隐藏 */}
-        {isMacOS && sidebarMode !== "floating" && (
+        {(isMacOS || isWindows) && sidebarMode === "classic" && (
           <>
             <ItemSeparator />
             <Item variant="outline" className="border-0">
               <ItemContent>
                 <ItemTitle>显示顶部栏</ItemTitle>
                 <ItemDescription className="text-xs">
-                  显示顶部标题栏（关闭时，三色按钮将显示在侧边栏顶部）
+                  {isMacOS
+                    ? "显示顶部标题栏（关闭时，三色按钮将显示在侧边栏顶部）"
+                    : "显示顶部标题栏（关闭时，窗口按钮将显示在右上角空白处）"}
                 </ItemDescription>
               </ItemContent>
               <ItemActions>
@@ -344,7 +348,23 @@ export function AppearanceSection({
                     }}
                   />
                   <span className="text-xs text-muted-foreground w-10 text-right">
-                    {overlayOpacity}%
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={overlayOpacity}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        let numValue = parseInt(value, 10);
+                        
+                        if (isNaN(numValue) || numValue < 0 || numValue > 100) {
+                          numValue = 0;
+                        }
+                        
+                        setOverlayOpacity(numValue);
+                      }}
+                      className="w-12 h-4 text-center text-xs text-foreground bg-muted rounded-md outline-none"
+                    />
                   </span>
                 </div>
               </ItemActions>
@@ -372,7 +392,23 @@ export function AppearanceSection({
                     }}
                   />
                   <span className="text-xs text-muted-foreground w-10 text-right">
-                    {blur}px
+                    <input
+                      type="number"
+                      min="0"
+                      max="20"
+                      value={blur}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        let numValue = parseInt(value, 10);
+                        
+                        if (isNaN(numValue) || numValue < 0 || numValue > 20) {
+                          numValue = 0;
+                        }
+                        
+                        setBlur(numValue);
+                      }}
+                      className="w-12 h-4 text-center text-xs text-foreground bg-muted rounded-md outline-none"
+                    />
                   </span>
                 </div>
               </ItemActions>
@@ -450,7 +486,28 @@ export function AppearanceSection({
                         }}
                       />
                       <span className="text-xs text-muted-foreground w-10 text-right">
-                        {videoVolume}%
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={videoVolume}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            let numValue = parseInt(value, 10);
+                            
+                            if (isNaN(numValue) || numValue < 0 || numValue > 100) {
+                              numValue = 0;
+                            }
+                            
+                            setVideoVolume(numValue);
+                            localStorage.setItem(
+                              "videoVolume",
+                              numValue.toString(),
+                            );
+                            window.dispatchEvent(new Event("videoVolumeChanged"));
+                          }}
+                          className="w-12 h-4 text-center text-xs text-foreground bg-muted rounded-md outline-none"
+                        />
                       </span>
                     </div>
                   </ItemActions>

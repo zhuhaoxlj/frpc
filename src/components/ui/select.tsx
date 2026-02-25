@@ -158,7 +158,7 @@ export function Select({
               width: menuStyle.width,
               maxHeight: menuStyle.maxHeight,
             }}
-            className="fixed z-50 bg-card border border-border/60 rounded-lg shadow-lg overflow-auto"
+            className="fixed z-[60] bg-card border border-border/60 rounded-lg shadow-lg overflow-auto pointer-events-auto"
           >
             {options.map((option) => (
               <button
