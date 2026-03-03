@@ -29,6 +29,15 @@ export interface TunnelConfig {
 export class FrpcManager {
   private unlisten?: UnlistenFn;
 
+  private parseRemotePort(rawPort?: string): number | undefined {
+    if (!rawPort) return undefined;
+    const parsed = Number.parseInt(rawPort, 10);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+      throw new Error(`无效的远程端口: ${rawPort}`);
+    }
+    return parsed;
+  }
+
   async startTunnel(tunnel: Tunnel, userToken: string): Promise<string> {
     // 获取代理配置
     let httpProxy: string | undefined;
@@ -87,9 +96,7 @@ export class FrpcManager {
       local_port: tunnel.nport,
       remote_port:
         tunnel.type === "tcp" || tunnel.type === "udp"
-          ? tunnel.dorp
-            ? parseInt(tunnel.dorp)
-            : undefined
+          ? this.parseRemotePort(tunnel.dorp)
           : undefined,
       custom_domains:
         tunnel.type === "http" || tunnel.type === "https"

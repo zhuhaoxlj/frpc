@@ -14,7 +14,6 @@ import { toast } from "sonner";
 import { useTunnelList } from "./hooks/useTunnelList";
 import { useTunnelProgress } from "./hooks/useTunnelProgress";
 import { useTunnelToggle } from "./hooks/useTunnelToggle";
-import { useAutoStartTunnels } from "./hooks/useAutoStartTunnels";
 import { TunnelCard } from "./components/TunnelCard";
 import { CreateTunnelDialog } from "./components/CreateTunnelDialog";
 import { EditTunnelDialog } from "./components/EditTunnelDialog";
@@ -70,14 +69,6 @@ export function TunnelList({ user }: TunnelListProps) {
     setRunningTunnels,
     timeoutRefs,
     successTimeoutRefs,
-  });
-
-  // 自动启动隧道
-  useAutoStartTunnels({
-    tunnels,
-    loading,
-    runningTunnels,
-    onToggle: handleToggle,
   });
 
   const handleOpenCreateDialog = useCallback(async () => {

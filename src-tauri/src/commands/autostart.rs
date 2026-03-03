@@ -83,7 +83,10 @@ pub async fn set_tunnel_auto_start(
     let key = format!("{}_{}", tunnel_type, tunnel_id);
     config.insert(key, serde_json::Value::Bool(enabled));
     
-    std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
+    let config_content = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("序列化配置文件失败: {}", e))?;
+
+    std::fs::write(&config_path, config_content)
         .map_err(|e| format!("写入配置文件失败: {}", e))?;
     
     Ok(())
@@ -114,8 +117,8 @@ pub async fn get_auto_start_tunnels(
     let mut result = vec![];
     for (key, value) in config {
         if let Some(true) = value.as_bool() {
-            // 解析 key 格式: "api_123" or "custom_uuid"
-            if let Some((tunnel_type, id_str)) = key.rsplit_once('_') {
+            // 解析 key 格式: "api_123" or "custom_any_id_with_underscore"
+            if let Some((tunnel_type, id_str)) = key.split_once('_') {
                 result.push((tunnel_type.to_string(), id_str.to_string()));
             }
         }

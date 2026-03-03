@@ -1,9 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export class AutoStartTunnelsService {
-  private unlisten?: UnlistenFn;
-
   /**
    * 获取指定隧道的自动启动设置
    * @param tunnelType 隧道类型
@@ -65,32 +62,6 @@ export class AutoStartTunnelsService {
     }
   }
 
-  /**
-   * 监听设置变化事件
-   * @param callback 回调函数
-   */
-  async listen(callback: (enabled: boolean) => void): Promise<void> {
-    if (this.unlisten) {
-      this.unlisten();
-    }
-
-    this.unlisten = await listen<boolean>(
-      "auto-start-tunnels-changed",
-      (event) => {
-        callback(event.payload);
-      },
-    );
-  }
-
-  /**
-   * 停止监听
-   */
-  stopListening(): void {
-    if (this.unlisten) {
-      this.unlisten();
-      this.unlisten = undefined;
-    }
-  }
 }
 
 export const autoStartTunnelsService = new AutoStartTunnelsService();

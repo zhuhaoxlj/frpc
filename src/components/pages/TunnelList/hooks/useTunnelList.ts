@@ -43,7 +43,6 @@ export function useTunnelList() {
 
       setTunnels(allTunnels);
       tunnelListCache.tunnels = apiTunnels;
-      setLoading(false);
 
       const running = new Set<string>();
       const withTimeout = (promise: Promise<boolean>, timeoutMs: number) =>
@@ -82,6 +81,7 @@ export function useTunnelList() {
         }),
       );
       setRunningTunnels(running);
+      setLoading(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : "获取隧道列表失败";
       if (

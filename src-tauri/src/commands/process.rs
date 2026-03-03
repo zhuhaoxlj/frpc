@@ -27,7 +27,10 @@ fn spawn_log_reader(
         .name(thread_name)
         .spawn(move || {
             let reader = BufReader::new(reader);
-            for line in reader.lines().flatten() {
+            for line in reader.lines() {
+                let Ok(line) = line else {
+                    break;
+                };
                 let clean_line = strip_ansi_escapes::strip_str(&line);
                 let sanitized_line =
                     sanitize_log(&clean_line, &[user_token.as_str(), node_token.as_str()]);
@@ -99,6 +102,7 @@ pub async fn start_frpc(
         .path()
         .app_data_dir()
         .map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&app_dir).map_err(|e| format!("创建应用目录失败: {}", e))?;
 
     let config_path = app_dir.join(format!("g_{}.ini", tunnel_id));
     let config_content = generate_frpc_config(&config)?;

@@ -10,41 +10,16 @@ use tauri::{
     Emitter, Listener, Manager,
 };
 
-const AUTO_START_CONFIG_FILE: &str = "auto_start_tunnels.json";
-
-fn get_auto_start_tunnels_setting(app_handle: &tauri::AppHandle) -> bool {
-    let Some(app_data_dir) = app_handle.path().app_data_dir().ok() else {
-        return false;
-    };
-    let config_path = app_data_dir.join(AUTO_START_CONFIG_FILE);
-    if !config_path.exists() {
-        return false;
-    }
-    let Ok(content) = std::fs::read_to_string(&config_path) else {
-        return false;
-    };
-    serde_json::from_str::<serde_json::Value>(&content)
-        .ok()
-        .and_then(|config| config.get("enabled").and_then(|v| v.as_bool()))
-        .unwrap_or(false)
-}
-
-fn save_auto_start_tunnels_setting(app_handle: &tauri::AppHandle, enabled: bool) -> bool {
-    let Some(app_data_dir) = app_handle.path().app_data_dir().ok() else {
-        return false;
-    };
-    if std::fs::create_dir_all(&app_data_dir).is_err() {
-        return false;
-    }
-    let config_path = app_data_dir.join(AUTO_START_CONFIG_FILE);
-    let config = serde_json::json!({ "enabled": enabled });
-    std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).is_ok()
-}
-
 fn cleanup_official_tunnel_configs(app_handle: &tauri::AppHandle) {
     let Ok(app_data_dir) = app_handle.path().app_data_dir() else {
         return;
     };
+
+    let legacy_auto_start_config = app_data_dir.join("auto_start_tunnels.json");
+    if legacy_auto_start_config.exists() {
+        let _ = std::fs::remove_file(legacy_auto_start_config);
+    }
+
     let Ok(entries) = std::fs::read_dir(&app_data_dir) else {
         return;
     };
@@ -58,21 +33,11 @@ fn cleanup_official_tunnel_configs(app_handle: &tauri::AppHandle) {
 }
 
 fn build_tray_menu(app: &tauri::App) -> Result<tauri::menu::Menu<tauri::Wry>, Box<dyn std::error::Error>> {
-    let auto_start_tunnels = get_auto_start_tunnels_setting(&app.handle());
-    let auto_start_label = if auto_start_tunnels {
-        "✓ 启动软件时自动启动隧道"
-    } else {
-        "启动软件时自动启动隧道"
-    };
-
     let show_item = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
-    let auto_start_item = MenuItemBuilder::with_id("auto_start_tunnels", auto_start_label).build(app)?;
     let quit_item = MenuItemBuilder::with_id("quit", "退出").build(app)?;
 
     MenuBuilder::new(app)
         .item(&show_item)
-        .separator()
-        .item(&auto_start_item)
         .separator()
         .item(&quit_item)
         .build()
@@ -103,7 +68,7 @@ pub fn run() {
                 .cloned()
                 .expect("Failed to load tray icon: default window icon not found");
 
-            let _tray = TrayIconBuilder::new()
+            let _tray = TrayIconBuilder::with_id("main")
                 .icon(tray_icon)
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -111,15 +76,6 @@ pub fn run() {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
-                        }
-                    }
-                    "auto_start_tunnels" => {
-                        let app_handle = app.clone();
-                        let current_setting = get_auto_start_tunnels_setting(&app_handle);
-                        let new_setting = !current_setting;
-
-                        if save_auto_start_tunnels_setting(&app_handle, new_setting) {
-                            let _ = app_handle.emit("auto-start-tunnels-changed", new_setting);
                         }
                     }
                     "quit" => {
