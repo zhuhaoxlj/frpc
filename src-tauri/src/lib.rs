@@ -4,6 +4,8 @@ mod utils;
 
 pub use models::{FrpcProcesses, ProcessGuardState};
 
+use std::fs;
+
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{TrayIconBuilder, TrayIconEvent},
@@ -27,6 +29,53 @@ fn cleanup_official_tunnel_configs(app_handle: &tauri::AppHandle) {
         if let Ok(file_name) = entry.file_name().into_string() {
             if file_name.starts_with("g_") && file_name.ends_with(".ini") {
                 let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
+fn frpc_file_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "frpc.exe"
+    } else {
+        "frpc"
+    }
+}
+
+fn ensure_bundled_frpc(app_handle: &tauri::AppHandle) {
+    let Ok(app_data_dir) = app_handle.path().app_data_dir() else {
+        return;
+    };
+
+    if fs::create_dir_all(&app_data_dir).is_err() {
+        return;
+    }
+
+    let target = app_data_dir.join(frpc_file_name());
+    if target.exists() {
+        return;
+    }
+
+    let Ok(resource_dir) = app_handle.path().resource_dir() else {
+        return;
+    };
+    let bundled = resource_dir.join(frpc_file_name());
+    if !bundled.exists() {
+        return;
+    }
+
+    if fs::copy(&bundled, &target).is_err() {
+        return;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(&target) {
+            let mut perms = metadata.permissions();
+            if perms.mode() & 0o111 == 0 {
+                perms.set_mode(0o755);
+                let _ = fs::set_permissions(&target, perms);
             }
         }
     }
@@ -164,6 +213,7 @@ pub fn run() {
             commands::process_guard::start_guard_monitor(app_handle.clone());
 
             cleanup_official_tunnel_configs(&app_handle);
+            ensure_bundled_frpc(&app_handle);
 
             Ok(())
         })
