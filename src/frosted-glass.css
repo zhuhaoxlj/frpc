@@ -6,15 +6,13 @@
 .frosted-glass-enabled .bg-popover,
 .frosted-glass-enabled [data-slot="context-menu-content"],
 .frosted-glass-enabled [data-slot="context-menu-sub-content"],
-.frosted-glass-enabled [data-slot="dialog-content"],
 .frosted-glass-enabled .bg-sidebar,
 .frosted-glass-enabled .bg-background,
 .frosted-glass-enabled input,
 .frosted-glass-enabled textarea,
 .frosted-glass-enabled select,
 body:has(.frosted-glass-enabled) [data-slot="context-menu-content"],
-body:has(.frosted-glass-enabled) [data-slot="context-menu-sub-content"],
-body:has(.frosted-glass-enabled) [data-slot="dialog-content"] {
+body:has(.frosted-glass-enabled) [data-slot="context-menu-sub-content"] {
   background-color: rgba(255, 255, 255, 0.45) !important;
   backdrop-filter: blur(24px) saturate(200%) !important;
   -webkit-backdrop-filter: blur(24px) saturate(200%) !important;
@@ -29,15 +27,13 @@ body:has(.frosted-glass-enabled) [data-slot="dialog-content"] {
 .dark .frosted-glass-enabled .bg-popover,
 .dark .frosted-glass-enabled [data-slot="context-menu-content"],
 .dark .frosted-glass-enabled [data-slot="context-menu-sub-content"],
-.dark .frosted-glass-enabled [data-slot="dialog-content"],
 .dark .frosted-glass-enabled .bg-sidebar,
 .dark .frosted-glass-enabled .bg-background,
 .dark .frosted-glass-enabled input,
 .dark .frosted-glass-enabled textarea,
 .dark .frosted-glass-enabled select,
 .dark body:has(.frosted-glass-enabled) [data-slot="context-menu-content"],
-.dark body:has(.frosted-glass-enabled) [data-slot="context-menu-sub-content"],
-.dark body:has(.frosted-glass-enabled) [data-slot="dialog-content"] {
+.dark body:has(.frosted-glass-enabled) [data-slot="context-menu-sub-content"] {
   background-color: rgba(15, 16, 20, 0.45) !important;
   backdrop-filter: blur(24px) saturate(200%) !important;
   -webkit-backdrop-filter: blur(24px) saturate(200%) !important;
@@ -106,8 +102,7 @@ body:has(.frosted-glass-enabled) [data-slot="dialog-content"] {
 .translucent-enabled textarea,
 .translucent-enabled select,
 body:has(.translucent-enabled) [data-slot="context-menu-content"],
-body:has(.translucent-enabled) [data-slot="context-menu-sub-content"],
-body:has(.translucent-enabled) [data-slot="dialog-content"] {
+body:has(.translucent-enabled) [data-slot="context-menu-sub-content"] {
   background-color: rgba(255, 255, 255, 0.5) !important;
   border-color: rgba(255, 255, 255, 0.3) !important;
 }
@@ -124,8 +119,7 @@ body:has(.translucent-enabled) [data-slot="dialog-content"] {
 .dark .translucent-enabled textarea,
 .dark .translucent-enabled select,
 .dark body:has(.translucent-enabled) [data-slot="context-menu-content"],
-.dark body:has(.translucent-enabled) [data-slot="context-menu-sub-content"],
-.dark body:has(.translucent-enabled) [data-slot="dialog-content"] {
+.dark body:has(.translucent-enabled) [data-slot="context-menu-sub-content"] {
   background-color: rgba(15, 16, 20, 0.5) !important;
   border-color: rgba(255, 255, 255, 0.2) !important;
 }
