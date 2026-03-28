@@ -1,0 +1,150 @@
+use serde::Serialize;
+use std::process::Command;
+
+#[derive(Serialize)]
+pub struct PortInfo {
+    pub port: String,
+    pub pid: String,
+    pub process: String,
+}
+
+#[derive(Serialize)]
+pub struct PortCheckResult {
+    pub occupied: bool,
+    pub pid: Option<String>,
+    pub process: Option<String>,
+}
+
+fn collect_ports() -> Vec<PortInfo> {
+    #[cfg(target_os = "windows")]
+    {
+        let netstat = Command::new("cmd")
+            .args(["/C", "netstat -ano | findstr LISTENING"])
+            .output()
+            .expect("failed to execute netstat");
+        let netstat_text = String::from_utf8_lossy(&netstat.stdout);
+
+        let tasklist = Command::new("cmd")
+            .args(["/C", "tasklist /FO CSV /NH"])
+            .output()
+            .expect("failed to execute tasklist");
+        let tasklist_text = String::from_utf8_lossy(&tasklist.stdout);
+
+        let mut result = Vec::new();
+
+        for line in netstat_text.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 5 {
+                let address = parts[1];
+                let pid = parts[4];
+                if let Some(port) = address.split(':').last() {
+                    let process_name = tasklist_text
+                        .lines()
+                        .find(|l| l.contains(pid))
+                        .and_then(|l| l.split(',').next())
+                        .unwrap_or("")
+                        .trim_matches('"');
+
+                    result.push(PortInfo {
+                        port: port.to_string(),
+                        pid: pid.to_string(),
+                        process: process_name.to_string(),
+                    });
+                }
+            }
+        }
+
+        result
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let output = Command::new("sh")
+            .args(["-c", "netstat -lntp 2>/dev/null | tail -n +3"])
+            .output()
+            .expect("failed to execute netstat");
+        let text = String::from_utf8_lossy(&output.stdout);
+
+        let mut result = Vec::new();
+        for line in text.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 7 {
+                let address = parts[3];
+                let pid_proc = parts[6];
+                if let Some(port) = address.split(':').last() {
+                    let mut split = pid_proc.split('/');
+                    let pid = split.next().unwrap_or("");
+                    let process = split.next().unwrap_or("");
+                    result.push(PortInfo {
+                        port: port.to_string(),
+                        pid: pid.to_string(),
+                        process: process.to_string(),
+                    });
+                }
+            }
+        }
+
+        result
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("sh")
+            .args(["-c", "lsof -iTCP -sTCP:LISTEN -n -P"])
+            .output()
+            .expect("failed to execute lsof");
+        let text = String::from_utf8_lossy(&output.stdout);
+
+        let mut result = Vec::new();
+        for line in text.lines().skip(1) {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 9 {
+                let process = parts[0];
+                let pid = parts[1];
+                let port_part = parts[8];
+                if let Some(port) = port_part.split(':').last() {
+                    result.push(PortInfo {
+                        port: port.to_string(),
+                        pid: pid.to_string(),
+                        process: process.to_string(),
+                    });
+                }
+            }
+        }
+
+        result
+    }
+}
+
+#[tauri::command]
+pub async fn get_ports() -> Vec<PortInfo> {
+    tauri::async_runtime::spawn_blocking(collect_ports)
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub async fn check_local_port(port: String) -> PortCheckResult {
+    tauri::async_runtime::spawn_blocking(move || {
+        let matched = collect_ports().into_iter().find(|item| item.port == port);
+
+        match matched {
+            Some(port_info) => PortCheckResult {
+                occupied: true,
+                pid: Some(port_info.pid),
+                process: Some(port_info.process),
+            },
+            None => PortCheckResult {
+                occupied: false,
+                pid: None,
+                process: None,
+            },
+        }
+    })
+    .await
+    .unwrap_or(PortCheckResult {
+        occupied: false,
+        pid: None,
+        process: None,
+    })
+}
