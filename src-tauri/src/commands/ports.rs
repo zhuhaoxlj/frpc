@@ -31,6 +31,17 @@ fn deduplicate_ports(items: Vec<PortInfo>) -> Vec<PortInfo> {
         }
     }
 
+    deduplicated.sort_by(|a, b| {
+        let a_port = a.port.parse::<u32>().unwrap_or(u32::MAX);
+        let b_port = b.port.parse::<u32>().unwrap_or(u32::MAX);
+
+        a_port
+            .cmp(&b_port)
+            .then_with(|| a.pid.cmp(&b.pid))
+            .then_with(|| a.process.cmp(&b.process))
+            .then_with(|| a.protocol.cmp(&b.protocol))
+    });
+
     deduplicated
 }
 

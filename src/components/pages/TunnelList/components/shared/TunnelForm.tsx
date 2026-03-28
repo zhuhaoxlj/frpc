@@ -95,6 +95,18 @@ export function TunnelForm({
 
   const currentPort = formData.localPort.trim();
   const hasMatchedPortStatus = portStatus?.checkedPort === currentPort;
+  const localPortStatusText =
+    !portStatus?.checking &&
+    !portStatusError &&
+    hasMatchedPortStatus &&
+    portStatus.occupied
+      ? `进程：${portStatus.process || "未知进程"} (PID ${portStatus.pid || "未知"})`
+      : !portStatus?.checking && portStatusError
+        ? portStatusError
+        : "";
+  const localPortStatusClass = portStatusError
+    ? "text-destructive"
+    : "text-emerald-600";
 
   const normalizeProtocol = useCallback((protocol?: string) => {
     if (!protocol) return "-";
@@ -127,11 +139,20 @@ export function TunnelForm({
   }, [fetchPortUsageList, portUsageList]);
 
   const handleSelectPort = useCallback(
-    (port: string) => {
-      onChange({ localPort: port });
+    (item: PortUsage) => {
+      const normalized = normalizeProtocol(item.protocol);
+      const updates: Partial<TunnelFormData> = {
+        localPort: String(item.port),
+      };
+
+      if (normalized === "TCP" || normalized === "UDP") {
+        updates.portType = normalized;
+      }
+
+      onChange(updates);
       setPortQueryOpen(false);
     },
-    [onChange],
+    [normalizeProtocol, onChange],
   );
 
   const normalizedQueryKeyword = queryKeyword.trim().toLowerCase();
@@ -227,9 +248,19 @@ export function TunnelForm({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="localPort" className="text-sm font-medium">
-              本地端口
-            </Label>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="localPort" className="text-sm font-medium">
+                本地端口
+              </Label>
+              <span
+                className={cn(
+                  "min-h-4 max-w-[70%] truncate text-xs",
+                  localPortStatusClass,
+                )}
+              >
+                {localPortStatusText}
+              </span>
+            </div>
             <div className="flex items-center gap-2">
               <Input
                 id="localPort"
@@ -256,24 +287,6 @@ export function TunnelForm({
                 <TooltipContent side="top">查询并选择本机进程占用端口</TooltipContent>
               </Tooltip>
             </div>
-            {currentPort &&
-              !portStatus?.checking &&
-              (portStatusError ||
-                (hasMatchedPortStatus && portStatus.occupied)) && (
-              <p
-                className={cn(
-                  "text-xs",
-                  portStatusError ? "text-destructive" : "text-emerald-600",
-                )}
-              >
-                {!portStatus?.checking &&
-                  !portStatusError &&
-                  hasMatchedPortStatus &&
-                  portStatus.occupied &&
-                  `进程：${portStatus.process || "未知进程"} (PID ${portStatus.pid || "未知"})`}
-                {!portStatus?.checking && portStatusError && portStatusError}
-              </p>
-            )}
           </div>
         </div>
 
@@ -457,7 +470,7 @@ export function TunnelForm({
                       <TableRow
                         key={`${item.port}-${item.pid}-${item.protocol || ""}`}
                         className="cursor-pointer"
-                        onClick={() => handleSelectPort(String(item.port))}
+                        onClick={() => handleSelectPort(item)}
                       >
                         <TableCell className="font-medium">{item.port}</TableCell>
                         <TableCell>{item.pid}</TableCell>
