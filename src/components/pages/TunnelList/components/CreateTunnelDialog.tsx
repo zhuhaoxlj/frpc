@@ -25,16 +25,6 @@ import { NodeSelector } from "./shared/NodeSelector";
 import { NodeDetails } from "./shared/NodeDetails";
 import { TunnelForm, type TunnelFormData } from "./shared/TunnelForm";
 
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { RefreshCw } from "lucide-react";
-
 interface CreateTunnelDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -48,73 +38,6 @@ type PortStatus = PortCheckResult & {
   checkedPort: string;
 };
 
-type PortUsage = {
-  port: number;
-  pid: number;
-  process: string;
-  protocol?: string;
-};
-
-function PortListTable({
-                         title,
-                         data,
-                         loading,
-                         onRefresh,
-                       }: {
-  title: string;
-  data: PortUsage[];
-  loading?: boolean;
-  onRefresh?: () => void;
-}) {
-  if (!data.length) return null;
-
-  return (
-      <div className="mb-3 rounded-2xl border bg-background p-3 shadow-sm">
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-sm font-semibold">{title}</div>
-
-          {onRefresh && (
-              <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={onRefresh}
-                  disabled={loading}
-                  className="gap-2"
-              >
-                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                刷新
-              </Button>
-          )}
-        </div>
-
-        <div className="max-h-[300px] overflow-auto rounded-xl border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[80px]">端口</TableHead>
-                <TableHead className="w-[80px]">PID</TableHead>
-                <TableHead>进程</TableHead>
-                <TableHead className="w-[90px]">协议</TableHead>
-              </TableRow>
-            </TableHeader>
-
-            <TableBody>
-              {data.map((item) => (
-                  <TableRow key={`${item.port}-${item.pid}`}>
-                    <TableCell className="font-medium">{item.port}</TableCell>
-                    <TableCell>{item.pid}</TableCell>
-                    <TableCell>{item.process}</TableCell>
-                    <TableCell>{item.protocol || "-"}</TableCell>
-                  </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-  );
-}
-
 export function CreateTunnelDialog({
                                      open,
                                      onOpenChange,
@@ -123,7 +46,7 @@ export function CreateTunnelDialog({
                                      user,
                                    }: CreateTunnelDialogProps) {
   const [tunnelType, setTunnelType] = useState<"standard" | "custom">("standard");
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [loading, setLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [nodeInfo, setNodeInfo] = useState<NodeInfo | null>(null);
@@ -141,11 +64,6 @@ export function CreateTunnelDialog({
     processLabel: string;
   } | null>(null);
 
-  // step3 端口占用列表
-  const [portList, setPortList] = useState<PortUsage[] | null>(null);
-  const [portListLoading, setPortListLoading] = useState(false);
-  const [portListError, setPortListError] = useState<string | null>(null);
-
   const [formData, setFormData] = useState<TunnelFormData>({
     tunnelName: "",
     localIp: "127.0.0.1",
@@ -160,35 +78,9 @@ export function CreateTunnelDialog({
 
   const nodes = preloadedNodes || [];
 
-  // 获取端口占用列表（step3刷新按钮用）
-  const fetchPortList = useCallback(async () => {
-    try {
-      setPortListLoading(true);
-      setPortListError(null);
-
-      const { invoke } = await import("@tauri-apps/api/core");
-      const result = await invoke<PortUsage[]>("get_ports");
-
-      setPortList(result);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setPortListError(message);
-      setPortList(null);
-    } finally {
-      setPortListLoading(false);
-    }
-  }, []);
-
-  // step3 进入时自动获取端口列表
+  // step3 端口检查（只检查用户输入的 localPort）
   useEffect(() => {
-    if (step === 3) {
-      fetchPortList();
-    }
-  }, [step, fetchPortList]);
-
-  // step4 端口检查（只检查用户输入的 localPort）
-  useEffect(() => {
-    if (step !== 4) return;
+    if (step !== 3) return;
 
     const port = formData.localPort.trim();
     if (!port) {
@@ -311,11 +203,6 @@ export function CreateTunnelDialog({
 
   // step2 -> step3（端口占用情况）
   const goToStep3 = () => {
-    setStep(3);
-  };
-
-  // step3 -> step4（配置隧道）
-  const goToStep4 = () => {
     if (nodeInfo) {
       setFormData((prev) => ({
         ...prev,
@@ -323,7 +210,7 @@ export function CreateTunnelDialog({
         remotePort: generateRandomPort(nodeInfo.rport).toString(),
       }));
     }
-    setStep(4);
+    setStep(3);
   };
 
   const handleNodeSelect = (node: Node) => {
@@ -456,10 +343,6 @@ export function CreateTunnelDialog({
     setPortStatus(null);
     setPortStatusError(null);
 
-    setPortList(null);
-    setPortListError(null);
-    setPortListLoading(false);
-
     setShowPortOccupiedConfirm(false);
     setPortOccupiedWarning(null);
 
@@ -479,11 +362,6 @@ export function CreateTunnelDialog({
   };
 
   const handleBack = () => {
-    if (step === 4) {
-      setStep(3);
-      return;
-    }
-
     if (step === 3) {
       setStep(2);
       return;
@@ -506,19 +384,6 @@ export function CreateTunnelDialog({
     return <CustomTunnelDialog open={open} onOpenChange={handleClose} onSuccess={onSuccess} />;
   }
 
-  // step3 数据分类：java/python 单独表格
-  const javaPythonPorts =
-      portList?.filter((p) => {
-        const name = p.process?.toLowerCase() || "";
-        return name.includes("java") || name.includes("python");
-      }) || [];
-
-  const otherPorts =
-      portList?.filter((p) => {
-        const name = p.process?.toLowerCase() || "";
-        return !(name.includes("java") || name.includes("python"));
-      }) || [];
-
   return (
       <>
         <Dialog open={open} onOpenChange={handleClose}>
@@ -529,17 +394,14 @@ export function CreateTunnelDialog({
                       ? "max-w-6xl"
                       : step === 2
                           ? "max-w-4xl"
-                          : step === 3
-                              ? "max-w-4xl"
-                              : "max-w-xl",
+                          : "max-w-xl",
               )}
           >
             <DialogHeader className="shrink-0 gap-1.5">
               <DialogTitle className="animate-in fade-in text-xl duration-300" key={`title-${step}`}>
                 {step === 1 && "新建隧道"}
                 {step === 2 && "节点详情"}
-                {step === 3 && "端口占用情况"}
-                {step === 4 && "配置隧道"}
+                {step === 3 && "配置隧道"}
               </DialogTitle>
 
               {step === 2 && selectedNode && (
@@ -549,12 +411,6 @@ export function CreateTunnelDialog({
               )}
 
               {step === 3 && selectedNode && (
-                  <DialogDescription className="animate-in fade-in text-sm duration-300" key="desc-step3">
-                    节点：{selectedNode.name} - 查看本机端口占用情况
-                  </DialogDescription>
-              )}
-
-              {step === 4 && selectedNode && (
                   <DialogDescription className="animate-in fade-in text-sm duration-300" key="desc-step4">
                     节点：{selectedNode.name} - 填写隧道配置信息
                   </DialogDescription>
@@ -606,63 +462,9 @@ export function CreateTunnelDialog({
                     </Button>
                   </DialogFooter>
                 </div>
-            ) : step === 3 ? (
-                <div
-                    key="step3"
-                    className="flex flex-1 flex-col overflow-hidden min-h-0 pt-3"
-                >
-                  {/* 可滚动的内容区域 */}
-                  <div className="flex-1 overflow-auto pr-1">
-                    {portListError && (
-                        <div className="mb-3 rounded-xl border bg-red-50 p-2 text-sm text-red-600">
-                          获取端口占用失败：{portListError}
-                        </div>
-                    )}
-
-                    {!portListLoading && portList && portList.length === 0 && (
-                        <div className="mb-3 rounded-xl border bg-muted/30 p-3 text-sm text-muted-foreground">
-                          暂无端口占用数据
-                        </div>
-                    )}
-
-                    {portListLoading && (
-                        <div className="mb-3 rounded-xl border bg-muted/30 p-3 text-sm text-muted-foreground">
-                          正在加载端口占用情况...
-                        </div>
-                    )}
-
-                    {portList && portList.length > 0 && (
-                        <>
-                          {javaPythonPorts.length > 0 && (
-                              <PortListTable
-                                  title="⚠ Java / Python 占用端口"
-                                  data={javaPythonPorts}
-                                  loading={portListLoading}
-                                  onRefresh={fetchPortList}
-                              />
-                          )}
-                          <PortListTable
-                              title="当前端口占用情况"
-                              data={otherPorts}
-                              loading={portListLoading}
-                              onRefresh={fetchPortList}
-                          />
-                        </>
-                    )}
-                  </div>
-
-                  <DialogFooter className="gap-2 border-t pt-3">
-                    <Button type="button" variant="outline" onClick={handleBack}>
-                      返回
-                    </Button>
-                    <Button type="button" onClick={goToStep4}>
-                      下一步
-                    </Button>
-                  </DialogFooter>
-                </div>
             ) : (
                 <form
-                    key="step4"
+                    key="step3"
                     onSubmit={handleSubmit}
                     className="animate-in slide-in-from-bottom-2 fade-in flex min-h-0 flex-1 flex-col pt-3 duration-300"
                 >

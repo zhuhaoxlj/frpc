@@ -6,6 +6,7 @@ pub struct PortInfo {
     pub port: String,
     pub pid: String,
     pub process: String,
+    pub protocol: String,
 }
 
 #[derive(Serialize)]
@@ -49,6 +50,7 @@ fn collect_ports() -> Vec<PortInfo> {
                         port: port.to_string(),
                         pid: pid.to_string(),
                         process: process_name.to_string(),
+                        protocol: parts[0].to_string(),
                     });
                 }
             }
@@ -60,7 +62,7 @@ fn collect_ports() -> Vec<PortInfo> {
     #[cfg(target_os = "linux")]
     {
         let output = Command::new("sh")
-            .args(["-c", "netstat -lntp 2>/dev/null | tail -n +3"])
+            .args(["-c", "netstat -lnptu 2>/dev/null | tail -n +3"])
             .output()
             .expect("failed to execute netstat");
         let text = String::from_utf8_lossy(&output.stdout);
@@ -79,6 +81,7 @@ fn collect_ports() -> Vec<PortInfo> {
                         port: port.to_string(),
                         pid: pid.to_string(),
                         process: process.to_string(),
+                        protocol: parts[0].to_string(),
                     });
                 }
             }
@@ -90,7 +93,7 @@ fn collect_ports() -> Vec<PortInfo> {
     #[cfg(target_os = "macos")]
     {
         let output = Command::new("sh")
-            .args(["-c", "lsof -iTCP -sTCP:LISTEN -n -P"])
+            .args(["-c", "lsof -n -P -iTCP -sTCP:LISTEN -iUDP"])
             .output()
             .expect("failed to execute lsof");
         let text = String::from_utf8_lossy(&output.stdout);
@@ -107,6 +110,7 @@ fn collect_ports() -> Vec<PortInfo> {
                         port: port.to_string(),
                         pid: pid.to_string(),
                         process: process.to_string(),
+                        protocol: parts[7].to_string(),
                     });
                 }
             }

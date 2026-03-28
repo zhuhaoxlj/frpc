@@ -18,6 +18,7 @@ import {
   type Node,
   type NodeInfo,
 } from "@/services/api";
+import { checkLocalPort, type PortCheckResult } from "@/services/ports";
 import { frpcManager } from "@/services/frpcManager";
 import { NodeSelector } from "./shared/NodeSelector";
 import { NodeDetails } from "./shared/NodeDetails";
@@ -30,6 +31,11 @@ interface EditTunnelDialogProps {
   tunnel: Tunnel | null;
   preloadedNodes: Node[] | null;
 }
+
+type PortStatus = PortCheckResult & {
+  checking: boolean;
+  checkedPort: string;
+};
 
 export function EditTunnelDialog({
   open,
@@ -46,6 +52,8 @@ export function EditTunnelDialog({
   const [pingLatency, setPingLatency] = useState<number | null>(null);
   const [pinging, setPinging] = useState(false);
   const [pingError, setPingError] = useState(false);
+  const [portStatus, setPortStatus] = useState<PortStatus | null>(null);
+  const [portStatusError, setPortStatusError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<TunnelFormData>({
     tunnelName: "",
@@ -85,6 +93,64 @@ export function EditTunnelDialog({
       loadNodeInfoForStep3(tunnel.node);
     }
   }, [open, tunnel]);
+
+  useEffect(() => {
+    if (step !== 3) return;
+
+    const port = formData.localPort.trim();
+    if (!port) {
+      setPortStatus(null);
+      setPortStatusError(null);
+      return;
+    }
+
+    if (!/^\d+$/.test(port)) {
+      setPortStatus(null);
+      setPortStatusError("请输入有效的本地端口");
+      return;
+    }
+
+    const portNumber = Number(port);
+    if (portNumber < 1 || portNumber > 65535) {
+      setPortStatus(null);
+      setPortStatusError("端口范围必须在 1-65535 之间");
+      return;
+    }
+
+    setPortStatusError(null);
+    setPortStatus({
+      occupied: false,
+      pid: null,
+      process: null,
+      checking: true,
+      checkedPort: port,
+    });
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await checkLocalPort(port);
+        if (!cancelled) {
+          setPortStatus({
+            ...result,
+            checking: false,
+            checkedPort: port,
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "端口检查失败";
+          setPortStatus(null);
+          setPortStatusError(message);
+        }
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [formData.localPort, step]);
 
   const loadNodeInfo = async (nodeName: string) => {
     try {
@@ -258,6 +324,8 @@ export function EditTunnelDialog({
     setPingLatency(null);
     setPinging(false);
     setPingError(false);
+    setPortStatus(null);
+    setPortStatusError(null);
     setFormData({
       tunnelName: "",
       localIp: "127.0.0.1",
@@ -384,6 +452,8 @@ export function EditTunnelDialog({
               onChange={handleFormChange}
               nodeInfo={nodeInfo}
               disabled={loading}
+              portStatus={portStatus}
+              portStatusError={portStatusError}
             />
 
             <DialogFooter className="shrink-0 pt-3 border-t gap-2">
