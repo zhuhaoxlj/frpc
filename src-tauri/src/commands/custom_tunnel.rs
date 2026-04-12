@@ -346,6 +346,11 @@ pub async fn delete_custom_tunnel(
             let _ = child.kill();
             let _ = child.wait();
         }
+
+        // 记录pid
+        let _ = crate::commands::process_persistence::remove_running_tunnel(
+            &app_handle, tunnel_id_hash,
+        );
     }
 
     let app_dir = get_app_dir(&app_handle)?;
@@ -475,6 +480,11 @@ pub async fn start_custom_tunnel(
         procs.insert(tunnel_id_hash, child);
     }
 
+    // 记录pid
+    let _ = crate::commands::process_persistence::save_running_tunnel(
+        &app_handle, tunnel_id_hash, pid, "custom", Some(tunnel_id.clone()),
+    );
+
     let _ = crate::commands::process_guard::add_guarded_custom_tunnel(
         tunnel_id_hash,
         tunnel_id.clone(),
@@ -487,6 +497,7 @@ pub async fn start_custom_tunnel(
 
 #[tauri::command]
 pub async fn stop_custom_tunnel(
+    app_handle: tauri::AppHandle,
     tunnel_id: String,
     processes: State<'_, FrpcProcesses>,
     guard_state: State<'_, ProcessGuardState>,
@@ -497,54 +508,92 @@ pub async fn stop_custom_tunnel(
         crate::commands::process_guard::remove_guarded_process(tunnel_id_hash, guard_state, true)
             .await;
 
-    let mut procs = processes
-        .processes
-        .lock()
-        .map_err(|e| format!("获取进程锁失败: {}", e))?;
+    let found_in_manager = {
+        let mut procs = processes
+            .processes
+            .lock()
+            .map_err(|e| format!("获取进程锁失败: {}", e))?;
 
-    if let Some(mut child) = procs.remove(&tunnel_id_hash) {
-        match child.kill() {
-            Ok(_) => {
-                let _ = child.wait();
-                Ok("自定义隧道已停止".to_string())
-            }
-            Err(e) => {
-                let _ = child.wait();
-                Err(format!("停止进程失败: {}", e))
-            }
+        if let Some(mut child) = procs.remove(&tunnel_id_hash) {
+            let result = match child.kill() {
+                Ok(_) => {
+                    let _ = child.wait();
+                    Ok("自定义隧道已停止".to_string())
+                }
+                Err(e) => {
+                    let _ = child.wait();
+                    Err(format!("停止进程失败: {}", e))
+                }
+            };
+
+            let _ = crate::commands::process_persistence::remove_running_tunnel(
+                &app_handle, tunnel_id_hash,
+            );
+
+            return result;
         }
+
+        false
+    };
+
+    if !found_in_manager {
+        let _ = crate::commands::process_persistence::stop_orphan_process(
+            app_handle, tunnel_id_hash, processes,
+        )
+        .await
+        .ok();
+
+        Ok("自定义隧道已停止".to_string())
     } else {
-        Err("该隧道未在运行".to_string())
+        Ok("自定义隧道已停止".to_string())
     }
 }
 
 #[tauri::command]
 pub async fn is_custom_tunnel_running(
+    app_handle: tauri::AppHandle,
     tunnel_id: String,
     processes: State<'_, FrpcProcesses>,
 ) -> Result<bool, String> {
     let tunnel_id_hash = get_custom_tunnel_hash(&tunnel_id);
 
-    let mut procs = processes
-        .processes
-        .lock()
-        .map_err(|e| format!("获取进程锁失败: {}", e))?;
+    let in_process_manager = {
+        let mut procs = processes
+            .processes
+            .lock()
+            .map_err(|e| format!("获取进程锁失败: {}", e))?;
 
-    if let Some(child) = procs.get_mut(&tunnel_id_hash) {
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                procs.remove(&tunnel_id_hash);
-                Ok(false)
+        if let Some(child) = procs.get_mut(&tunnel_id_hash) {
+            match child.try_wait() {
+                Ok(Some(_)) => {
+                    procs.remove(&tunnel_id_hash);
+                    let _ = crate::commands::process_persistence::remove_running_tunnel(
+                        &app_handle, tunnel_id_hash,
+                    );
+                    Some(false)
+                }
+                Ok(None) => Some(true),
+                Err(_) => {
+                    procs.remove(&tunnel_id_hash);
+                    let _ = crate::commands::process_persistence::remove_running_tunnel(
+                        &app_handle, tunnel_id_hash,
+                    );
+                    Some(false)
+                }
             }
-            Ok(None) => Ok(true),
-            Err(_) => {
-                procs.remove(&tunnel_id_hash);
-                Ok(false)
-            }
+        } else {
+            None
         }
-    } else {
-        Ok(false)
+    };
+
+    if let Some(running) = in_process_manager {
+        return Ok(running);
     }
+
+    crate::commands::process_persistence::is_tunnel_process_alive(
+        app_handle, tunnel_id_hash, processes,
+    )
+    .await
 }
 
 struct IniParsedInfo {

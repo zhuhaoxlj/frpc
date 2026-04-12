@@ -199,6 +199,11 @@ pub async fn start_frpc(
         procs.insert(tunnel_id, child);
     }
 
+    // 持久化 PID 信息
+    let _ = crate::commands::process_persistence::save_running_tunnel(
+        &app_handle, tunnel_id, pid, "api", None,
+    );
+
     let _ = crate::commands::process_guard::add_guarded_process(tunnel_id, config, guard_state)
         .await;
 
@@ -215,22 +220,51 @@ pub async fn stop_frpc(
     let _ =
         crate::commands::process_guard::remove_guarded_process(tunnel_id, guard_state, true).await;
 
-    let mut procs = processes
-        .processes
-        .lock()
-        .map_err(|e| format!("获取进程锁失败: {}", e))?;
+    // 先在独立作用域中检查进程管理器，确保 MutexGuard 在调用 stop_orphan_process 前被 drop
+    let found_in_manager = {
+        let mut procs = processes
+            .processes
+            .lock()
+            .map_err(|e| format!("获取进程锁失败: {}", e))?;
 
-    if let Some(mut child) = procs.remove(&tunnel_id) {
-        let result = match child.kill() {
-            Ok(_) => {
-                let _ = child.wait();
-                Ok("frpc 已停止".to_string())
+        if let Some(mut child) = procs.remove(&tunnel_id) {
+            let result = match child.kill() {
+                Ok(_) => {
+                    let _ = child.wait();
+                    Ok("frpc 已停止".to_string())
+                }
+                Err(e) => {
+                    let _ = child.wait();
+                    Err(format!("停止进程失败: {}", e))
+                }
+            };
+
+            let _ = crate::commands::process_persistence::remove_running_tunnel(
+                &app_handle, tunnel_id,
+            );
+
+            let app_dir = app_handle
+                .path()
+                .app_data_dir()
+                .map_err(|e| e.to_string())?;
+            let config_path = app_dir.join(format!("g_{}.ini", tunnel_id));
+            if config_path.exists() {
+                let _ = std::fs::remove_file(&config_path);
             }
-            Err(e) => {
-                let _ = child.wait();
-                Err(format!("停止进程失败: {}", e))
-            }
-        };
+
+            return result;
+        }
+
+        false
+    }; // MutexGuard 在此处被 drop
+
+    if !found_in_manager {
+        // 不在进程管理器中，尝试通过持久化的 PID 终止孤儿进程
+        let _ = crate::commands::process_persistence::stop_orphan_process(
+            app_handle.clone(), tunnel_id, processes,
+        )
+        .await
+        .ok();
 
         let app_dir = app_handle
             .path()
@@ -241,41 +275,64 @@ pub async fn stop_frpc(
             let _ = std::fs::remove_file(&config_path);
         }
 
-        result
+        Ok("frpc 已停止".to_string())
     } else {
-        Err("该隧道未在运行".to_string())
+        Ok("frpc 已停止".to_string())
     }
 }
 
 #[tauri::command]
 pub async fn is_frpc_running(
+    app_handle: tauri::AppHandle,
     tunnel_id: i32,
     processes: State<'_, FrpcProcesses>,
 ) -> Result<bool, String> {
-    let mut procs = processes
-        .processes
-        .lock()
-        .map_err(|e| format!("获取进程锁失败: {}", e))?;
+    // 先检查进程管理器（在独立作用域中，确保 MutexGuard 被 drop）
+    let in_process_manager = {
+        let mut procs = processes
+            .processes
+            .lock()
+            .map_err(|e| format!("获取进程锁失败: {}", e))?;
 
-    if let Some(child) = procs.get_mut(&tunnel_id) {
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                procs.remove(&tunnel_id);
-                Ok(false)
+        if let Some(child) = procs.get_mut(&tunnel_id) {
+            match child.try_wait() {
+                Ok(Some(_)) => {
+                    procs.remove(&tunnel_id);
+                    let _ = crate::commands::process_persistence::remove_running_tunnel(
+                        &app_handle, tunnel_id,
+                    );
+                    Some(false)
+                }
+                Ok(None) => Some(true),
+                Err(_) => {
+                    procs.remove(&tunnel_id);
+                    let _ = crate::commands::process_persistence::remove_running_tunnel(
+                        &app_handle, tunnel_id,
+                    );
+                    Some(false)
+                }
             }
-            Ok(None) => Ok(true),
-            Err(_) => {
-                procs.remove(&tunnel_id);
-                Ok(false)
-            }
+        } else {
+            None
         }
-    } else {
-        Ok(false)
+    };
+
+    if let Some(running) = in_process_manager {
+        return Ok(running);
     }
+
+    // 不在进程管理器中，检查持久化的 PID
+    crate::commands::process_persistence::is_tunnel_process_alive(
+        app_handle, tunnel_id, processes,
+    )
+    .await
 }
 
 #[tauri::command]
-pub async fn get_running_tunnels(processes: State<'_, FrpcProcesses>) -> Result<Vec<i32>, String> {
+pub async fn get_running_tunnels(
+    app_handle: tauri::AppHandle,
+    processes: State<'_, FrpcProcesses>,
+) -> Result<Vec<i32>, String> {
     let mut procs = processes
         .processes
         .lock()
@@ -291,8 +348,19 @@ pub async fn get_running_tunnels(processes: State<'_, FrpcProcesses>) -> Result<
         }
     }
 
-    for tunnel_id in stopped_tunnels {
-        procs.remove(&tunnel_id);
+    for tunnel_id in &stopped_tunnels {
+        procs.remove(tunnel_id);
+        let _ = crate::commands::process_persistence::remove_running_tunnel(
+            &app_handle, *tunnel_id,
+        );
+    }
+
+    // 也检查持久化的 PID（可能是上次运行遗留的孤儿进程）
+    let persisted = crate::commands::process_persistence::recover_running_tunnels(&app_handle);
+    for info in persisted {
+        if !running_tunnels.contains(&info.tunnel_id) {
+            running_tunnels.push(info.tunnel_id);
+        }
     }
 
     Ok(running_tunnels)

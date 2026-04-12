@@ -7,6 +7,7 @@ pub mod ping;
 pub mod ports;
 pub mod process;
 pub mod process_guard;
+pub mod process_persistence;
 pub mod tray;
 
 pub use autostart::*;

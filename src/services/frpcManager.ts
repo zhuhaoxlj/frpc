@@ -26,6 +26,14 @@ export interface TunnelConfig {
   kcp_optimization: boolean;
 }
 
+export interface PersistedTunnelInfo {
+  tunnel_id: number;
+  pid: number;
+  tunnel_type: string;
+  original_id?: string;
+  started_at: string;
+}
+
 export class FrpcManager {
   private unlisten?: UnlistenFn;
 
@@ -132,6 +140,26 @@ export class FrpcManager {
       return await invoke<number[]>("get_running_tunnels");
     } catch {
       return [];
+    }
+  }
+
+  async getPersistedRunningTunnels(): Promise<PersistedTunnelInfo[]> {
+    try {
+      return await invoke<PersistedTunnelInfo[]>("get_persisted_running_tunnels");
+    } catch {
+      return [];
+    }
+  }
+
+  async stopOrphanProcess(tunnelId: number): Promise<string> {
+    return await invoke<string>("stop_orphan_process", { tunnelId });
+  }
+
+  async isTunnelProcessAlive(tunnelId: number): Promise<boolean> {
+    try {
+      return await invoke<boolean>("is_tunnel_process_alive", { tunnelId });
+    } catch {
+      return false;
     }
   }
 
