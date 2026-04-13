@@ -214,6 +214,10 @@ export function TunnelCard({
   };
 
   const handleToggleAutoStart = async () => {
+    if (isNodeOffline) {
+      toast.error("此节点已离线，无法设置自动启动");
+      return;
+    }
     try {
       const newValue = !autoStartEnabled;
       const tunnelType = isApi ? "api" : "custom";
@@ -386,16 +390,21 @@ export function TunnelCard({
                     closeMenu();
                     handleToggleAutoStart();
                   }}
-                  className="focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 text-left"
+                  disabled={isNodeOffline}
+                  className={`focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none text-left ${
+                    isNodeOffline ? "opacity-50 cursor-not-allowed" : ""
+                  }`}
                 >
                   {autoStartEnabled ? "✓ " : ""}自动启动
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right" className="max-w-xs">
                 <p className="text-xs">
-                  {autoStartEnabled
-                    ? "已启用：启动软件时自动启动此隧道"
-                    : "未启用：点击可开启启动软件时自动启动此隧道"}
+                  {isNodeOffline
+                    ? "此节点已离线，无法设置自动启动"
+                    : autoStartEnabled
+                      ? "已启用：启动软件时自动启动此隧道"
+                      : "未启用：点击可开启启动软件时自动启动此隧道"}
                 </p>
               </TooltipContent>
             </Tooltip>
