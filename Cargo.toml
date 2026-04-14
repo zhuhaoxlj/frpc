@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/chmlfrp-core", "crates/chmlfrp-tui", "src-tauri"]
+resolver = "2"
