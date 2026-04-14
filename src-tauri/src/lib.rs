@@ -280,6 +280,7 @@ pub fn run() {
             read_image_folder,
             commands::copy_background_video,
             commands::copy_background_image,
+            commands::import_background_image_folder,
             commands::get_background_video_path,
             commands::process_guard::set_process_guard_enabled,
             commands::process_guard::get_process_guard_enabled,
