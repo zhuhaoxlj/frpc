@@ -1,6 +1,7 @@
 use std::{
     env, fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
+    process::Command,
 };
 
 fn main() {
@@ -44,8 +45,10 @@ fn prepare_platform_frpc() {
 
     let output_file = resources_dir.join(output_name);
     fs::copy(&source_file, &output_file).expect("复制 frpc 文件到 resources 失败");
+    sign_macos_resource_if_needed(target_os, &output_file);
 
     println!("cargo:rerun-if-env-changed=TARGET");
+    println!("cargo:rerun-if-env-changed=APPLE_SIGNING_IDENTITY");
     println!("cargo:rerun-if-changed={}", source_file.display());
 }
 
@@ -77,3 +80,59 @@ fn frpc_layout(target_os: &str, target_arch: &str) -> Option<(&'static str, &'st
         _ => None,
     }
 }
+
+#[cfg(target_os = "macos")]
+fn sign_macos_resource_if_needed(target_os: &str, binary_path: &Path) {
+    if target_os != "macos" {
+        return;
+    }
+
+    let identity = match env::var("APPLE_SIGNING_IDENTITY") {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => {
+            println!(
+                "cargo:warning=APPLE_SIGNING_IDENTITY 未设置，跳过资源 {} 的 codesign",
+                binary_path.display()
+            );
+            return;
+        }
+    };
+
+    let output = Command::new("codesign")
+        .args([
+            "--force",
+            "--sign",
+            identity.as_str(),
+            "--timestamp",
+            "--options",
+            "runtime",
+            binary_path.to_string_lossy().as_ref(),
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!(
+                "执行 codesign 失败，无法签名资源 {}: {}",
+                binary_path.display(),
+                error
+            )
+        });
+
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        panic!(
+            "codesign 签名资源 {} 失败。\nstdout:\n{}\nstderr:\n{}",
+            binary_path.display(),
+            stdout.trim(),
+            stderr.trim()
+        );
+    }
+
+    println!(
+        "cargo:warning=已对资源 {} 完成 macOS codesign",
+        binary_path.display()
+    );
+}
+
+#[cfg(not(target_os = "macos"))]
+fn sign_macos_resource_if_needed(_target_os: &str, _binary_path: &Path) {}
