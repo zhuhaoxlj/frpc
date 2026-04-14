@@ -32,7 +32,7 @@ export interface UseBackgroundReturn {
 export function useBackground(): UseBackgroundReturn {
   const [backgroundImage, setBackgroundImage] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
-    return localStorage.getItem("backgroundImage");
+    return localStorage.getItem("backgroundImage") || null;
   });
   const [overlayOpacity, setOverlayOpacity] = useState<number>(() => {
     if (typeof window === "undefined") return 80;
@@ -69,6 +69,22 @@ export function useBackground(): UseBackgroundReturn {
   const hasPlayedFirstLoopRef = useRef(false);
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [playlist, setPlaylist] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    const stored = localStorage.getItem("background_playlist");
+    return stored ? JSON.parse(stored) : [];
+  });
+  const [, setCurrentIndex] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    const stored = localStorage.getItem("background_current_index");
+    return stored ? parseInt(stored, 10) : 0;
+  });
+  const [intervalTime, setIntervalTime] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    const stored = localStorage.getItem("background_interval_time");
+    return stored ? parseInt(stored, 10) : 0;
+  });
+  const slideshowTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const backgroundType = useMemo(() => {
     return getBackgroundType(backgroundImage);
@@ -101,12 +117,18 @@ export function useBackground(): UseBackgroundReturn {
       } else if (e.key === "videoVolume") {
         const value = e.newValue ? parseInt(e.newValue, 10) : 50;
         setVideoVolume(value);
+      } else if (e.key === "background_playlist") {
+        setPlaylist(e.newValue ? JSON.parse(e.newValue) : []);
+      } else if (e.key === "background_current_index") {
+        setCurrentIndex(e.newValue ? parseInt(e.newValue, 10) : 0);
+      } else if (e.key === "background_interval_time") {
+        setIntervalTime(e.newValue ? parseInt(e.newValue, 10) : 0);
       }
     };
     window.addEventListener("storage", handleStorageChange);
 
     const handleBackgroundImageChange = () => {
-      const bg = localStorage.getItem("backgroundImage");
+      const bg = localStorage.getItem("backgroundImage") || null;
       setBackgroundImage(bg);
     };
     window.addEventListener(
@@ -159,6 +181,19 @@ export function useBackground(): UseBackgroundReturn {
     };
     window.addEventListener("videoVolumeChanged", handleVideoVolumeChange);
 
+    const handleBackgroundSlideshowChange = () => {
+      const storedPlaylist = localStorage.getItem("background_playlist");
+      const storedIndex = localStorage.getItem("background_current_index");
+      const storedInterval = localStorage.getItem("background_interval_time");
+      setPlaylist(storedPlaylist ? JSON.parse(storedPlaylist) : []);
+      setCurrentIndex(storedIndex ? parseInt(storedIndex, 10) : 0);
+      setIntervalTime(storedInterval ? parseInt(storedInterval, 10) : 0);
+    };
+    window.addEventListener(
+      "backgroundSlideshowChanged",
+      handleBackgroundSlideshowChange,
+    );
+
     return () => {
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener(
@@ -175,8 +210,49 @@ export function useBackground(): UseBackgroundReturn {
         handleVideoStartSoundChange,
       );
       window.removeEventListener("videoVolumeChanged", handleVideoVolumeChange);
+      window.removeEventListener(
+        "backgroundSlideshowChanged",
+        handleBackgroundSlideshowChange,
+      );
     };
   }, []);
+
+  useEffect(() => {
+    if (slideshowTimerRef.current) {
+      clearInterval(slideshowTimerRef.current);
+      slideshowTimerRef.current = null;
+    }
+
+    if (
+      backgroundType === "image" &&
+      intervalTime > 0 &&
+      playlist.length > 1
+    ) {
+      slideshowTimerRef.current = setInterval(() => {
+        setCurrentIndex((prev) => {
+          const next = (prev + 1) % playlist.length;
+          const nextImage = playlist[next] || null;
+
+          localStorage.setItem("background_current_index", next.toString());
+
+          if (nextImage) {
+            localStorage.setItem("backgroundImage", nextImage);
+            setBackgroundImage(nextImage);
+            window.dispatchEvent(new Event("backgroundImageChanged"));
+          }
+
+          return next;
+        });
+      }, intervalTime);
+    }
+
+    return () => {
+      if (slideshowTimerRef.current) {
+        clearInterval(slideshowTimerRef.current);
+        slideshowTimerRef.current = null;
+      }
+    };
+  }, [backgroundType, intervalTime, playlist]);
 
   useEffect(() => {
     let currentBlobUrl: string | null = null;
@@ -279,7 +355,7 @@ export function useBackground(): UseBackgroundReturn {
     let currentBlobUrl: string | null = null;
     let isMounted = true;
 
-    const loadImage = async () => {
+    const loadImage = async (retryCount = 0) => {
       if (backgroundType === "image" && backgroundImage) {
         if (
           backgroundImage.startsWith("app://") ||
@@ -305,6 +381,15 @@ export function useBackground(): UseBackgroundReturn {
           } catch {
             if (!isMounted) return;
 
+            if (retryCount < 2) {
+              setTimeout(() => {
+                if (isMounted) {
+                  void loadImage(retryCount + 1);
+                }
+              }, 1000);
+              return;
+            }
+
             if (currentBlobUrl) {
               URL.revokeObjectURL(currentBlobUrl);
               currentBlobUrl = null;
@@ -319,7 +404,7 @@ export function useBackground(): UseBackgroundReturn {
       }
     };
 
-    loadImage();
+    void loadImage();
 
     return () => {
       isMounted = false;
