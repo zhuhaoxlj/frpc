@@ -1,27 +1,42 @@
 # Logs
-logs
+# Build artifacts
+target/
+dist/
+dist-ssr/
+*.deb
+*.rpm
+*.dmg
+*.msi
+*.exe
+
+# Logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Dependencies
+node_modules/
+
+# Environment and Local Config
 *.local
+.env
+.env.*
 src-tauri/frpc.ini
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-package-lock.json
-target/
+
+# Lock files (kept for apps, ignored for libs - keeping for now)
+# package-lock.json
+
