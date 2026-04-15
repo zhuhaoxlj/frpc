@@ -42,7 +42,7 @@ pub fn draw_tunnels(f: &mut Frame, app: &App, area: Rect) {
             let remote = if tunnel.tunnel_type == "http" || tunnel.tunnel_type == "https" {
                 tunnel.dorp.clone()
             } else {
-                format!("{}:{}", tunnel.node_ip, tunnel.dorp)
+                format!("http://{}:{}", tunnel.node_ip, tunnel.dorp)
             };
 
             let style = if i == app.selected_tunnel {
