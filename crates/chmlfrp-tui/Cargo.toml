@@ -2,10 +2,25 @@
 name = "chmlfrp-tui"
 version = "0.1.0"
 edition = "2021"
+description = "ChmlFrp 内网穿透 TUI 客户端"
+license = "Apache-2.0"
+authors = ["南充市轻爪网络科技有限公司 <chaoji@chcat.cn>"]
 
 [[bin]]
 name = "chmlfrp-tui"
 path = "src/main.rs"
+
+[package.metadata.deb]
+maintainer = "南充市轻爪网络科技有限公司 <chaoji@chcat.cn>"
+copyright = "2024, 南充市轻爪网络科技有限公司"
+license-file = ["../../LICENSE", "0"]
+section = "net"
+priority = "optional"
+extended-description = "ChmlFrp 内网穿透 TUI 客户端，支持守护进程模式和开机自启。"
+assets = [
+    ["target/release/chmlfrp-tui", "usr/bin/", "755"],
+    ["assets/chmlfrp-tui.service", "lib/systemd/system/", "644"],
+]
 
 [dependencies]
 chmlfrp-core = { path = "../chmlfrp-core" }

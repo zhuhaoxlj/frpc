@@ -82,8 +82,13 @@ pub fn draw_login(f: &mut Frame, app: &App) {
             }
 
             lines.push(Line::from(""));
+            let status = if !app.status_message.is_empty() {
+                app.status_message.as_str()
+            } else {
+                "等待授权中..."
+            };
             lines.push(Line::from(Span::styled(
-                "等待授权中...",
+                status,
                 Style::default().fg(Color::DarkGray),
             )));
             lines.push(Line::from(""));

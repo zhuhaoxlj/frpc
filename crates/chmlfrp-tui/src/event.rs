@@ -57,18 +57,44 @@ async fn handle_login_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn 
         }
         KeyCode::Char('c') => {
             if app.login_state == LoginState::WaitingForAuth {
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    let _ = clipboard.set_text(app.login_user_code.clone());
-                    app.status_message = "验证码已复制到剪贴板".to_string();
+                let text = app.login_user_code.clone();
+                #[cfg(target_os = "linux")]
+                {
+                    std::thread::spawn(move || {
+                        if let Ok(mut cb) = arboard::Clipboard::new() {
+                            use arboard::SetExtLinux;
+                            let _ = cb.set().wait().text(text);
+                        }
+                    });
                 }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                        let _ = cb.set_text(text);
+                    }
+                }
+                app.status_message = "验证码已复制到剪贴板".to_string();
             }
         }
         KeyCode::Char('u') => {
             if app.login_state == LoginState::WaitingForAuth {
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    let _ = clipboard.set_text(app.login_verification_uri.clone());
-                    app.status_message = "授权链接已复制到剪贴板".to_string();
+                let text = app.login_verification_uri.clone();
+                #[cfg(target_os = "linux")]
+                {
+                    std::thread::spawn(move || {
+                        if let Ok(mut cb) = arboard::Clipboard::new() {
+                            use arboard::SetExtLinux;
+                            let _ = cb.set().wait().text(text);
+                        }
+                    });
                 }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                        let _ = cb.set_text(text);
+                    }
+                }
+                app.status_message = "授权链接已复制到剪贴板".to_string();
             }
         }
         _ => {}
