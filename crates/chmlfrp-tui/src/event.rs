@@ -7,13 +7,19 @@ pub async fn handle_events(app: &mut App) -> Result<bool, Box<dyn std::error::Er
     // 收集日志和异步任务结果
     app.drain_events();
 
-    // 登录成功后自动刷新隧道列表
+    // 登录成功或启动后自动刷新隧道列表
     if app.needs_refresh {
         app.needs_refresh = false;
         app.refresh_tunnels().await;
         if app.settings.auto_start_tunnels_enabled {
-            app.start_auto_tunnels().await;
+            app.needs_auto_start = true;
         }
+    }
+
+    // 当隧道加载完成后且需要自启时触发
+    if app.needs_auto_start && !app.tunnels.is_empty() {
+        app.needs_auto_start = false;
+        app.start_auto_tunnels().await;
     }
 
     if !event::poll(Duration::from_millis(100))? {
@@ -182,7 +188,6 @@ async fn handle_main_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn s
             }
         }
         KeyCode::Char('r') => {
-            app.status_message = "刷新中...".to_string();
             app.refresh_tunnels().await;
         }
         KeyCode::Char('d') => {

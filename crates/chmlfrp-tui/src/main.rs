@@ -92,11 +92,15 @@ async fn run_app(
     if let Some(user) = storage::load_user()? {
         app.stored_user = Some(user);
         app.screen = app::Screen::Main;
-        // 自动刷新隧道列表
-        app.refresh_tunnels().await;
-        // 如果开启了自启，启动对应隧道
+        app.status_message = "正在加载数据...".to_string();
+
+        // 首次绘制，显示"正在加载数据"
+        terminal.draw(|f| ui::draw(f, &app))?;
+
+        // 标记需要自动刷新和启动，交给事件循环去异步处理
+        app.needs_refresh = true;
         if app.settings.auto_start_tunnels_enabled {
-            app.start_auto_tunnels().await;
+            app.needs_auto_start = true;
         }
     }
 

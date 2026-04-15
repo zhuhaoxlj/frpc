@@ -52,6 +52,7 @@ pub struct App {
     pub download_result_rx: Option<mpsc::UnboundedReceiver<Result<std::path::PathBuf, String>>>,
     pub download_progress_rx: Option<mpsc::UnboundedReceiver<f64>>,
     pub needs_refresh: bool,
+    pub needs_auto_start: bool,
 }
 
 impl App {
@@ -91,6 +92,7 @@ impl App {
             download_result_rx: None,
             download_progress_rx: None,
             needs_refresh: false,
+            needs_auto_start: false,
         }
     }
 

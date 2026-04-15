@@ -41,6 +41,18 @@ pub async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
                 for tunnel in tunnels {
                     if !running.contains(&tunnel.id) && app.settings.auto_start_tunnel_ids.contains(&tunnel.id) {
                         println!("尝试自动启动隧道: {} (ID: {})", tunnel.name, tunnel.id);
+
+                        // 获取节点信息以构建 TunnelConfig (解决无 node_token 的报错)
+                        if let Some(token) = app.stored_user.as_ref().and_then(|u| u.access_token.clone()) {
+                            let _node_info = match chmlfrp_core::api::fetch_node_info(&tunnel.node, &token).await {
+                                Ok(info) => info,
+                                Err(e) => {
+                                    eprintln!("获取节点信息失败: {}", e);
+                                    continue;
+                                }
+                            };
+                        }
+
                         // 构造 TunnelConfig
                         let config = TunnelConfig {
                             tunnel_id: tunnel.id,
