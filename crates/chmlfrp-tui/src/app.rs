@@ -84,17 +84,22 @@ impl App {
         }
     }
 
-    /// 获取有效 token
-    pub fn get_token(&self) -> Option<String> {
-        let user = self.stored_user.as_ref()?;
-        user.access_token
-            .clone()
-            .or_else(|| user.usertoken.clone())
+    /// 获取有效 token (自动刷新)
+    pub async fn get_token(&mut self) -> Option<String> {
+        if let Some(mut user) = self.stored_user.take() {
+            let res = chmlfrp_core::auth::ensure_valid_token(&mut user).await;
+            self.stored_user = Some(user.clone());
+            if let Ok(token) = res {
+                let _ = crate::storage::save_user(&user);
+                return Some(token);
+            }
+        }
+        None
     }
 
     /// 刷新隧道列表
     pub async fn refresh_tunnels(&mut self) {
-        let token = match self.get_token() {
+        let token = match self.get_token().await {
             Some(t) => t,
             None => {
                 self.status_message = "未登录".to_string();
@@ -144,7 +149,7 @@ impl App {
             return;
         }
 
-        let token = match self.get_token() {
+        let token = match self.get_token().await {
             Some(t) => t,
             None => return,
         };
