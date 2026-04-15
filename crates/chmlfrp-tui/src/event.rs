@@ -11,6 +11,9 @@ pub async fn handle_events(app: &mut App) -> Result<bool, Box<dyn std::error::Er
     if app.needs_refresh {
         app.needs_refresh = false;
         app.refresh_tunnels().await;
+        if app.settings.auto_start_tunnels_enabled {
+            app.start_auto_tunnels().await;
+        }
     }
 
     if !event::poll(Duration::from_millis(100))? {
@@ -115,12 +118,16 @@ async fn handle_main_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn s
         }
         KeyCode::Char('1') => app.tab = Tab::Tunnels,
         KeyCode::Char('2') => app.tab = Tab::Logs,
+        KeyCode::Char('3') => app.tab = Tab::Settings,
         KeyCode::Up | KeyCode::Char('k') => {
             if app.tab == Tab::Tunnels && app.selected_tunnel > 0 {
                 app.selected_tunnel -= 1;
             }
             if app.tab == Tab::Logs && app.log_scroll > 0 {
                 app.log_scroll -= 1;
+            }
+            if app.tab == Tab::Settings && app.selected_setting > 0 {
+                app.selected_setting -= 1;
             }
         }
         KeyCode::Down | KeyCode::Char('j') => {
@@ -129,6 +136,9 @@ async fn handle_main_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn s
             }
             if app.tab == Tab::Logs {
                 app.log_scroll += 1;
+            }
+            if app.tab == Tab::Settings && app.selected_setting < 1 {
+                app.selected_setting += 1;
             }
         }
         KeyCode::Enter => {
@@ -139,6 +149,36 @@ async fn handle_main_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn s
                 } else {
                     app.start_selected_tunnel().await;
                 }
+            } else if app.tab == Tab::Settings {
+                if app.selected_setting == 0 {
+                    if app.is_systemd_installed {
+                        app.status_message = "请手动执行 sudo systemctl disable --now chmlfrp-tui.service 并删除 service 文件".to_string();
+                    } else {
+                        // TODO: Implement install_systemd_service call later
+                        app.status_message = "请使用 sudo 安装 deb 包获取后台服务支持".to_string();
+                    }
+                } else if app.selected_setting == 1 {
+                    app.settings.auto_start_tunnels_enabled = !app.settings.auto_start_tunnels_enabled;
+                    let _ = crate::storage::save_settings(&app.settings);
+                    app.status_message = if app.settings.auto_start_tunnels_enabled {
+                        "已开启软件启动时自动开启隧道".to_string()
+                    } else {
+                        "已关闭软件启动时自动开启隧道".to_string()
+                    };
+                }
+            }
+        }
+        KeyCode::Char('a') | KeyCode::Char('A') => {
+            if app.tab == Tab::Tunnels && !app.tunnels.is_empty() {
+                let tunnel_id = app.tunnels[app.selected_tunnel].id;
+                if app.settings.auto_start_tunnel_ids.contains(&tunnel_id) {
+                    app.settings.auto_start_tunnel_ids.retain(|&id| id != tunnel_id);
+                    app.status_message = format!("已取消隧道 {} (ID: {}) 的自启标记", app.tunnels[app.selected_tunnel].name, tunnel_id);
+                } else {
+                    app.settings.auto_start_tunnel_ids.push(tunnel_id);
+                    app.status_message = format!("隧道 {} (ID: {}) 已设为自动启动", app.tunnels[app.selected_tunnel].name, tunnel_id);
+                }
+                let _ = crate::storage::save_settings(&app.settings);
             }
         }
         KeyCode::Char('r') => {

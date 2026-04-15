@@ -40,3 +40,38 @@ pub fn clear_user() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+use serde::{Deserialize, Serialize};
+
+const SETTINGS_FILE: &str = "settings.json";
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AppSettings {
+    pub auto_start_tunnels_enabled: bool,
+    pub auto_start_tunnel_ids: Vec<i32>,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            auto_start_tunnels_enabled: false,
+            auto_start_tunnel_ids: Vec::new(),
+        }
+    }
+}
+
+pub fn load_settings() -> Result<AppSettings, Box<dyn std::error::Error>> {
+    let path = crate::storage::get_data_dir().join(SETTINGS_FILE);
+    if !path.exists() {
+        return Ok(AppSettings::default());
+    }
+    let content = std::fs::read_to_string(&path)?;
+    let settings: AppSettings = serde_json::from_str(&content)?;
+    Ok(settings)
+}
+
+pub fn save_settings(settings: &AppSettings) -> Result<(), Box<dyn std::error::Error>> {
+    let path = crate::storage::get_data_dir().join(SETTINGS_FILE);
+    let content = serde_json::to_string_pretty(settings)?;
+    std::fs::write(&path, content)?;
+    Ok(())
+}

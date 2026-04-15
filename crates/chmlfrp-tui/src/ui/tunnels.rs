@@ -51,9 +51,15 @@ pub fn draw_tunnels(f: &mut Frame, app: &App, area: Rect) {
                 Style::default()
             };
 
+            let auto_start_mark = if app.settings.auto_start_tunnel_ids.contains(&tunnel.id) {
+                "[A] "
+            } else {
+                ""
+            };
+
             Row::new(vec![
                 Cell::from(format!(" {}", tunnel.id)),
-                Cell::from(tunnel.name.clone()),
+                Cell::from(format!("{}{}", auto_start_mark, tunnel.name)),
                 Cell::from(tunnel.tunnel_type.clone()),
                 Cell::from(tunnel.node.clone()),
                 Cell::from(format!("{}:{}", tunnel.localip, tunnel.nport)),

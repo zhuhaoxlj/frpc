@@ -1,5 +1,6 @@
 mod login;
 mod logs;
+mod settings;
 mod tunnels;
 
 use crate::app::{App, Screen, Tab};
@@ -25,10 +26,11 @@ fn draw_main(f: &mut Frame, app: &App) {
         .split(f.area());
 
     // 标题栏 + Tab
-    let tabs = Tabs::new(vec!["[1] 隧道", "[2] 日志"])
+    let tabs = Tabs::new(vec!["[1] 隧道", "[2] 日志", "[3] 设置"])
         .select(match app.tab {
             Tab::Tunnels => 0,
             Tab::Logs => 1,
+            Tab::Settings => 2,
         })
         .style(Style::default().fg(Color::White))
         .highlight_style(Style::default().fg(Color::Cyan).bold())
@@ -70,6 +72,7 @@ fn draw_main(f: &mut Frame, app: &App) {
     match app.tab {
         Tab::Tunnels => tunnels::draw_tunnels(f, app, chunks[2]),
         Tab::Logs => logs::draw_logs(f, app, chunks[2]),
+        Tab::Settings => settings::draw_settings(f, app, chunks[2]),
     }
 
     // 状态栏
@@ -86,8 +89,9 @@ fn draw_main(f: &mut Frame, app: &App) {
     };
 
     let help = match app.tab {
-        Tab::Tunnels => " ↑↓选择 Enter启动/停止 o打开远程地址 r刷新 d下载frpc l注销 q退出",
+        Tab::Tunnels => " ↑↓选择 Enter启动/停止 a自动启动 o打开网址 r刷新 d下载 l注销 q退出",
         Tab::Logs => " ↑↓滚动 r刷新 q退出",
+        Tab::Settings => " ↑↓选择 Enter切换状态 q退出",
     };
 
     let status_layout = Layout::default()

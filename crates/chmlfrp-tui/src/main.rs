@@ -7,7 +7,6 @@ mod systemd;
 
 use app::App;
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -95,6 +94,10 @@ async fn run_app(
         app.screen = app::Screen::Main;
         // 自动刷新隧道列表
         app.refresh_tunnels().await;
+        // 如果开启了自启，启动对应隧道
+        if app.settings.auto_start_tunnels_enabled {
+            app.start_auto_tunnels().await;
+        }
     }
 
     loop {

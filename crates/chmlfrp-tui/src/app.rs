@@ -13,6 +13,7 @@ pub enum Screen {
 pub enum Tab {
     Tunnels,
     Logs,
+    Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +30,9 @@ pub struct App {
     pub tunnels: Vec<Tunnel>,
     pub running_tunnels: Vec<i32>,
     pub selected_tunnel: usize,
+    pub settings: crate::storage::AppSettings,
+    pub selected_setting: usize,
+    pub is_systemd_installed: bool,
     pub logs: Vec<LogMessage>,
     pub log_scroll: u16,
     pub status_message: String,
@@ -54,6 +58,9 @@ impl App {
     pub fn new() -> Self {
         let (log_tx, log_rx) = mpsc::unbounded_channel();
         let data_dir = crate::storage::get_data_dir();
+        let settings = crate::storage::load_settings().unwrap_or_default();
+        let is_systemd_installed = std::path::Path::new("/etc/systemd/system/chmlfrp-tui.service").exists()
+            || std::path::Path::new("/lib/systemd/system/chmlfrp-tui.service").exists();
 
         Self {
             screen: Screen::Login,
@@ -62,6 +69,9 @@ impl App {
             tunnels: Vec::new(),
             running_tunnels: Vec::new(),
             selected_tunnel: 0,
+            settings,
+            selected_setting: 0,
+            is_systemd_installed,
             logs: Vec::new(),
             log_scroll: 0,
             status_message: String::new(),
@@ -228,6 +238,74 @@ impl App {
         }
     }
 
+    /// 自动启动被标记的隧道
+    pub async fn start_auto_tunnels(&mut self) {
+        if !self.settings.auto_start_tunnels_enabled {
+            return;
+        }
+
+        if !chmlfrp_core::download::check_frpc_exists(&self.data_dir) {
+            self.status_message = "frpc 未下载，无法自动启动隧道".to_string();
+            return;
+        }
+
+        let _token = match self.get_token().await {
+            Some(t) => t,
+            None => return,
+        };
+
+        // 获取运行中隧道，避免重复启动
+        let running = chmlfrp_core::process::get_running_tunnels(&self.data_dir, &self.processes).unwrap_or_default();
+
+        for tunnel in self.tunnels.clone() {
+            if self.settings.auto_start_tunnel_ids.contains(&tunnel.id) && !running.contains(&tunnel.id) {
+                // 为了避免修改 App 状态过多，这里复用了 start_selected_tunnel 里的逻辑
+                // 但直接内联处理比较简单，因为借用检查器的限制
+                let config = chmlfrp_core::models::TunnelConfig {
+                    tunnel_id: tunnel.id,
+                    tunnel_name: tunnel.name.clone(),
+                    user_token: self.stored_user.as_ref().unwrap().usertoken.clone().unwrap_or_default(),
+                    server_addr: tunnel.node_ip.clone(),
+                    server_port: tunnel.server_port,
+                    node_token: tunnel.node_token.clone(),
+                    tunnel_type: tunnel.tunnel_type.clone(),
+                    local_ip: tunnel.localip.clone(),
+                    local_port: tunnel.nport as u16,
+                    remote_port: if tunnel.tunnel_type == "tcp" || tunnel.tunnel_type == "udp" {
+                        tunnel.dorp.parse().ok()
+                    } else {
+                        None
+                    },
+                    custom_domains: if tunnel.tunnel_type == "http" || tunnel.tunnel_type == "https" {
+                        Some(tunnel.dorp.clone())
+                    } else {
+                        None
+                    },
+                    http_proxy: None,
+                    log_level: "info".to_string(),
+                    force_tls: true,
+                    kcp_optimization: false,
+                };
+
+                match chmlfrp_core::process::start_frpc(
+                    &self.data_dir,
+                    &config,
+                    &self.processes,
+                    self.log_tx.clone(),
+                ) {
+                    Ok(pid) => {
+                        self.running_tunnels.push(tunnel.id);
+                        // 注意这里是覆盖 status_message，最终可能只显示最后一个启动的消息
+                        self.status_message = format!("自动启动隧道 {} (PID: {})", tunnel.name, pid);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("自动启动 {} 失败: {}", tunnel.name, e);
+                    }
+                }
+            }
+        }
+    }
+
     /// 收集新日志和后台任务结果
     pub fn drain_events(&mut self) {
         // 处理日志
@@ -251,6 +329,7 @@ impl App {
                         self.login_result_rx = None;
                         self.needs_refresh = true;
                         self.status_message = "登录成功！正在刷新隧道列表...".to_string();
+                        // 登录成功时不能在这里直接 await 启动隧道，放在 event.rs 处理 needs_refresh 的地方处理
                     }
                     Err(e) => {
                         self.login_state = LoginState::Error;
