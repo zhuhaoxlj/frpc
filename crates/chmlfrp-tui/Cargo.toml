@@ -17,10 +17,13 @@ license-file = ["../../LICENSE", "0"]
 section = "net"
 priority = "optional"
 extended-description = "ChmlFrp 内网穿透 TUI 客户端，支持守护进程模式和开机自启。"
+# cargo-deb 会根据 --target 自动将 target/release 映射到正确的构建目录
 assets = [
     ["target/release/chmlfrp-tui", "usr/bin/", "755"],
     ["assets/chmlfrp-tui.service", "lib/systemd/system/", "644"],
 ]
+# 强制指定较低的依赖版本，确保能安装在 Debian 12 上
+depends = "$auto, libc6 (>= 2.36)"
 
 [dependencies]
 chmlfrp-core = { path = "../chmlfrp-core" }
