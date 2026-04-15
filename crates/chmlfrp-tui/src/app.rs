@@ -47,6 +47,7 @@ pub struct App {
     pub login_result_rx: Option<mpsc::UnboundedReceiver<Result<StoredUser, String>>>,
     pub download_result_rx: Option<mpsc::UnboundedReceiver<Result<std::path::PathBuf, String>>>,
     pub download_progress_rx: Option<mpsc::UnboundedReceiver<f64>>,
+    pub needs_refresh: bool,
 }
 
 impl App {
@@ -79,6 +80,7 @@ impl App {
             login_result_rx: None,
             download_result_rx: None,
             download_progress_rx: None,
+            needs_refresh: false,
         }
     }
 
@@ -241,15 +243,9 @@ impl App {
                         self.stored_user = Some(user);
                         self.screen = Screen::Main;
                         self.login_state = LoginState::Idle;
-                        self.status_message = "登录成功！".to_string();
-                        // 触发异步刷新，不过在 TUI 中我们通常需要一个新的机制或在下一个循环处理
-                        // 这里我们先暂时清空接收器
                         self.login_result_rx = None;
-
-                        // 注意：这里无法直接调用 async 的 refresh_tunnels
-                        // 实际刷新会在进入 Main 屏幕后由用户按 r，或者我们在主循环中处理
-                        // 为了简单，我们先标记一条状态让用户按 r 刷新
-                        self.status_message = "登录成功！按 'r' 刷新隧道列表".to_string();
+                        self.needs_refresh = true;
+                        self.status_message = "登录成功！正在刷新隧道列表...".to_string();
                     }
                     Err(e) => {
                         self.login_state = LoginState::Error;

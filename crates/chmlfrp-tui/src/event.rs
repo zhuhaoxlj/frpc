@@ -7,6 +7,12 @@ pub async fn handle_events(app: &mut App) -> Result<bool, Box<dyn std::error::Er
     // 收集日志和异步任务结果
     app.drain_events();
 
+    // 登录成功后自动刷新隧道列表
+    if app.needs_refresh {
+        app.needs_refresh = false;
+        app.refresh_tunnels().await;
+    }
+
     if !event::poll(Duration::from_millis(100))? {
         return Ok(false);
     }
