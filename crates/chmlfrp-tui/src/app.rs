@@ -63,6 +63,9 @@ impl App {
         let is_systemd_installed = std::path::Path::new("/etc/systemd/system/chmlfrp-tui.service").exists()
             || std::path::Path::new("/lib/systemd/system/chmlfrp-tui.service").exists();
 
+
+        let logs = chmlfrp_core::persistence::load_persisted_logs(&data_dir, 5000);
+
         Self {
             screen: Screen::Login,
             tab: Tab::Tunnels,
@@ -73,7 +76,8 @@ impl App {
             settings,
             selected_setting: 0,
             is_systemd_installed,
-            logs: Vec::new(),
+            logs,
+
             log_scroll: 0,
             status_message: String::new(),
             login_state: LoginState::Idle,

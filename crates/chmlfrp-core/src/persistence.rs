@@ -1,12 +1,93 @@
-use crate::models::{PersistedTunnelInfo};
+use crate::models::{PersistedTunnelInfo, LogMessage};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::fs::OpenOptions;
+use std::io::Write;
 
 const RUNNING_TUNNELS_FILE: &str = "running_tunnels.json";
+const TUNNEL_LOGS_FILE: &str = "tunnel_logs.jsonl";
 
 /// 获取持久化文件路径
 pub fn get_persistence_path(data_dir: &Path) -> PathBuf {
     data_dir.join(RUNNING_TUNNELS_FILE)
+}
+
+/// 获取日志持久化文件路径
+pub fn get_logs_persistence_path(data_dir: &Path) -> PathBuf {
+    data_dir.join(TUNNEL_LOGS_FILE)
+}
+
+/// 保存一条日志
+pub fn save_log(data_dir: &Path, log: &LogMessage) -> Result<(), String> {
+    let path = get_logs_persistence_path(data_dir);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("打开日志文件失败: {}", e))?;
+        
+    let json = serde_json::to_string(log).map_err(|e| format!("序列化日志失败: {}", e))?;
+    writeln!(file, "{}", json).map_err(|e| format!("写入日志失败: {}", e))?;
+    
+    // 简单截断处理，避免日志无限增长
+    if let Ok(metadata) = std::fs::metadata(&path) {
+        // 限制在 100MB 左右
+        if metadata.len() > 100 * 1024 * 1024 {
+            let _ = rotate_logs(&path);
+        }
+    }
+    
+    Ok(())
+}
+
+fn rotate_logs(path: &Path) -> Result<(), std::io::Error> {
+    use std::io::{BufRead, BufReader};
+    use std::fs::File;
+    
+    // 只保留最后 50000 行
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+    
+    if lines.len() > 50000 {
+        lines.drain(0..lines.len() - 50000);
+        let mut new_file = File::create(path)?;
+        for line in lines {
+            writeln!(new_file, "{}", line)?;
+        }
+    }
+    Ok(())
+}
+
+/// 加载持久化的日志
+pub fn load_persisted_logs(data_dir: &Path, max_lines: usize) -> Vec<LogMessage> {
+    let path = get_logs_persistence_path(data_dir);
+    if !path.exists() {
+        return Vec::new();
+    }
+    
+    let file = match std::fs::File::open(&path) {
+        Ok(f) => f,
+        Err(_) => return Vec::new(),
+    };
+    
+    use std::io::{BufRead, BufReader};
+    let reader = BufReader::new(file);
+    
+    let mut logs: Vec<LogMessage> = reader.lines()
+        .filter_map(|l| l.ok())
+        .filter_map(|l| serde_json::from_str(&l).ok())
+        .collect();
+        
+    if logs.len() > max_lines {
+        logs.drain(0..logs.len() - max_lines);
+    }
+    
+    logs
 }
 
 /// 保存运行中的隧道信息

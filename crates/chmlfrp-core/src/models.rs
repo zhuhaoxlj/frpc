@@ -107,7 +107,7 @@ impl Default for ProcessGuardState {
 }
 
 /// 日志消息
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LogMessage {
     pub tunnel_id: i32,
     pub message: String,

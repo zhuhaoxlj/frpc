@@ -22,6 +22,7 @@ fn spawn_log_reader(
     node_token: String,
     reader: impl std::io::Read + Send + 'static,
     is_stderr: bool,
+    data_dir: PathBuf,
 ) {
     let thread_name = if is_stderr {
         format!("frpc-stderr-{}", tunnel_id)
@@ -46,14 +47,15 @@ fn spawn_log_reader(
                     sanitized_line
                 };
 
-                if log_tx
-                    .send(LogMessage {
-                        tunnel_id,
-                        message,
-                        timestamp,
-                    })
-                    .is_err()
-                {
+                let msg = LogMessage {
+                    tunnel_id,
+                    message,
+                    timestamp,
+                };
+                
+                let _ = crate::persistence::save_log(&data_dir, &msg);
+
+                if log_tx.send(msg).is_err() {
                     break;
                 }
             }
@@ -136,14 +138,16 @@ pub fn start_frpc(
     let pid = child.id();
 
     let timestamp = chrono::Local::now().format("%Y/%m/%d %H:%M:%S").to_string();
-    let _ = log_tx.send(LogMessage {
+    let msg = LogMessage {
         tunnel_id,
         message: format!(
             "[I] [ChmlFrpLauncher] frpc 进程已启动 (PID: {}), 开始连接服务器...",
             pid
         ),
         timestamp,
-    });
+    };
+    let _ = crate::persistence::save_log(data_dir, &msg);
+    let _ = log_tx.send(msg);
 
     if let Some(stdout) = child.stdout.take() {
         spawn_log_reader(
@@ -153,11 +157,12 @@ pub fn start_frpc(
             node_token.clone(),
             stdout,
             false,
+            data_dir.to_path_buf(),
         );
     }
 
     if let Some(stderr) = child.stderr.take() {
-        spawn_log_reader(log_tx, tunnel_id, user_token, node_token, stderr, true);
+        spawn_log_reader(log_tx, tunnel_id, user_token, node_token, stderr, true, data_dir.to_path_buf());
     }
 
     {
