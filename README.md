@@ -128,3 +128,16 @@ chmlfrp://start/{tunnel_id}
 ---
 
 Made with love by [TechCat Team](https://github.com/TechCat-Team)
+
+
+
+
+# 编译 NAS 版本
+```bash
+cargo deb -p chmlfrp-tui --target x86_64-unknown-linux-musl
+```
+
+# 运行 TUI 版本
+```bash
+cargo run -p chmlfrp-tui
+```
