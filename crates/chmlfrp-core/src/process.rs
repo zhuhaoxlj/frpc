@@ -15,6 +15,25 @@ pub fn resolve_frpc_path(data_dir: &Path) -> PathBuf {
     data_dir.join(frpc_file_name())
 }
 
+fn ensure_frpc_executable(frpc_path: &Path) -> Result<(), String> {
+    if !frpc_path.exists() {
+        return Err("frpc 未找到，请先下载".to_string());
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let metadata = std::fs::metadata(frpc_path).map_err(|e| e.to_string())?;
+        let mut perms = metadata.permissions();
+        if perms.mode() & 0o111 == 0 {
+            perms.set_mode(0o755);
+            std::fs::set_permissions(frpc_path, perms).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
+}
+
 fn spawn_log_reader(
     log_tx: mpsc::UnboundedSender<LogMessage>,
     tunnel_id: i32,
@@ -52,7 +71,7 @@ fn spawn_log_reader(
                     message,
                     timestamp,
                 };
-                
+
                 let _ = crate::persistence::save_log(&data_dir, &msg);
 
                 if log_tx.send(msg).is_err() {
@@ -65,17 +84,18 @@ fn spawn_log_reader(
     }
 }
 
-/// 启动 frpc 进程
-pub fn start_frpc(
+fn spawn_frpc_process(
     data_dir: &Path,
-    config: &TunnelConfig,
+    tunnel_id: i32,
+    config_arg: &Path,
+    user_token: String,
+    node_token: String,
     processes: &FrpcProcesses,
     log_tx: mpsc::UnboundedSender<LogMessage>,
+    tunnel_type: &str,
+    original_id: Option<String>,
+    start_message: String,
 ) -> Result<u32, String> {
-    let tunnel_id = config.tunnel_id;
-    let user_token = config.user_token.clone();
-    let node_token = config.node_token.clone();
-
     {
         let procs = processes
             .processes
@@ -88,44 +108,13 @@ pub fn start_frpc(
 
     std::fs::create_dir_all(data_dir).map_err(|e| format!("创建应用目录失败: {}", e))?;
 
-    let config_path = data_dir.join(format!("g_{}.ini", tunnel_id));
-    let config_content = generate_frpc_config(config)?;
-
-    std::fs::write(&config_path, &config_content)
-        .map_err(|e| format!("写入配置文件失败: {}", e))?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&config_path)
-            .map_err(|e| format!("获取配置文件权限失败: {}", e))?
-            .permissions();
-        perms.set_mode(0o600);
-        std::fs::set_permissions(&config_path, perms)
-            .map_err(|e| format!("设置配置文件权限失败: {}", e))?;
-    }
-
     let frpc_path = resolve_frpc_path(data_dir);
-
-    if !frpc_path.exists() {
-        return Err("frpc 未找到，请先下载".to_string());
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let metadata = std::fs::metadata(&frpc_path).map_err(|e| e.to_string())?;
-        let mut perms = metadata.permissions();
-        if perms.mode() & 0o111 == 0 {
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&frpc_path, perms).map_err(|e| e.to_string())?;
-        }
-    }
+    ensure_frpc_executable(&frpc_path)?;
 
     let mut cmd = StdCommand::new(&frpc_path);
     cmd.current_dir(data_dir)
         .arg("-c")
-        .arg(&config_path)
+        .arg(config_arg)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -140,10 +129,7 @@ pub fn start_frpc(
     let timestamp = chrono::Local::now().format("%Y/%m/%d %H:%M:%S").to_string();
     let msg = LogMessage {
         tunnel_id,
-        message: format!(
-            "[I] [ChmlFrpLauncher] frpc 进程已启动 (PID: {}), 开始连接服务器...",
-            pid
-        ),
+        message: start_message.replace("{pid}", &pid.to_string()),
         timestamp,
     };
     let _ = crate::persistence::save_log(data_dir, &msg);
@@ -162,7 +148,15 @@ pub fn start_frpc(
     }
 
     if let Some(stderr) = child.stderr.take() {
-        spawn_log_reader(log_tx, tunnel_id, user_token, node_token, stderr, true, data_dir.to_path_buf());
+        spawn_log_reader(
+            log_tx,
+            tunnel_id,
+            user_token,
+            node_token,
+            stderr,
+            true,
+            data_dir.to_path_buf(),
+        );
     }
 
     {
@@ -173,10 +167,81 @@ pub fn start_frpc(
         procs.insert(tunnel_id, child);
     }
 
-    // 持久化 PID
-    let _ = crate::persistence::save_running_tunnel(data_dir, tunnel_id, pid, "api", None);
+    let _ = crate::persistence::save_running_tunnel(data_dir, tunnel_id, pid, tunnel_type, original_id);
 
     Ok(pid)
+}
+
+/// 启动 frpc 进程
+pub fn start_frpc(
+    data_dir: &Path,
+    config: &TunnelConfig,
+    processes: &FrpcProcesses,
+    log_tx: mpsc::UnboundedSender<LogMessage>,
+) -> Result<u32, String> {
+    let tunnel_id = config.tunnel_id;
+    let user_token = config.user_token.clone();
+    let node_token = config.node_token.clone();
+
+    let config_path = data_dir.join(format!("g_{}.ini", tunnel_id));
+    let config_content = generate_frpc_config(config)?;
+
+    std::fs::write(&config_path, &config_content)
+        .map_err(|e| format!("写入配置文件失败: {}", e))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&config_path)
+            .map_err(|e| format!("获取配置文件权限失败: {}", e))?
+            .permissions();
+        perms.set_mode(0o600);
+        std::fs::set_permissions(&config_path, perms)
+            .map_err(|e| format!("设置配置文件权限失败: {}", e))?;
+    }
+
+    spawn_frpc_process(
+        data_dir,
+        tunnel_id,
+        &config_path,
+        user_token,
+        node_token,
+        processes,
+        log_tx,
+        "api",
+        None,
+        "[I] [ChmlFrpLauncher] frpc 进程已启动 (PID: {pid}), 开始连接服务器...".to_string(),
+    )
+}
+
+pub fn start_frpc_with_existing_config(
+    data_dir: &Path,
+    tunnel_id: i32,
+    config_file_name: &str,
+    original_id: &str,
+    processes: &FrpcProcesses,
+    log_tx: mpsc::UnboundedSender<LogMessage>,
+) -> Result<u32, String> {
+    let config_path = data_dir.join(config_file_name);
+    if !config_path.exists() {
+        return Err("配置文件不存在".to_string());
+    }
+
+    spawn_frpc_process(
+        data_dir,
+        tunnel_id,
+        Path::new(config_file_name),
+        String::new(),
+        String::new(),
+        processes,
+        log_tx,
+        "custom",
+        Some(original_id.to_string()),
+        format!(
+            "[I] [ChmlFrpLauncher] 自定义隧道 {} 进程已启动 (PID: {{pid}})",
+            original_id
+        ),
+    )
 }
 
 /// 停止 frpc 进程
@@ -200,17 +265,12 @@ pub fn stop_frpc(data_dir: &Path, tunnel_id: i32, processes: &FrpcProcesses) -> 
             };
 
             let _ = crate::persistence::remove_running_tunnel(data_dir, tunnel_id);
-
-            let config_path = data_dir.join(format!("g_{}.ini", tunnel_id));
-            if config_path.exists() {
-                let _ = std::fs::remove_file(&config_path);
-            }
+            cleanup_generated_config(data_dir, tunnel_id);
 
             return result;
         }
     }
 
-    // 不在进程管理器中，尝试通过持久化的 PID 终止
     let persistence_path = crate::persistence::get_persistence_path(data_dir);
     let tunnels: std::collections::HashMap<i32, crate::models::PersistedTunnelInfo> =
         if persistence_path.exists() {
@@ -229,13 +289,16 @@ pub fn stop_frpc(data_dir: &Path, tunnel_id: i32, processes: &FrpcProcesses) -> 
     }
 
     let _ = crate::persistence::remove_running_tunnel(data_dir, tunnel_id);
+    cleanup_generated_config(data_dir, tunnel_id);
 
+    Ok("frpc 已停止".to_string())
+}
+
+fn cleanup_generated_config(data_dir: &Path, tunnel_id: i32) {
     let config_path = data_dir.join(format!("g_{}.ini", tunnel_id));
     if config_path.exists() {
         let _ = std::fs::remove_file(&config_path);
     }
-
-    Ok("frpc 已停止".to_string())
 }
 
 /// 检查隧道是否运行中
@@ -263,7 +326,6 @@ pub fn is_frpc_running(data_dir: &Path, tunnel_id: i32, processes: &FrpcProcesse
         }
     }
 
-    // 检查持久化 PID
     let persistence_path = crate::persistence::get_persistence_path(data_dir);
     let tunnels: std::collections::HashMap<i32, crate::models::PersistedTunnelInfo> =
         if persistence_path.exists() {
@@ -308,7 +370,6 @@ pub fn get_running_tunnels(data_dir: &Path, processes: &FrpcProcesses) -> Result
         let _ = crate::persistence::remove_running_tunnel(data_dir, *tunnel_id);
     }
 
-    // 检查持久化的孤儿进程
     let persisted = crate::persistence::recover_running_tunnels(data_dir);
     for info in persisted {
         if !running_tunnels.contains(&info.tunnel_id) {

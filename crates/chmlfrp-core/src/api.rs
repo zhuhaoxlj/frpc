@@ -1,4 +1,4 @@
-use crate::models::{Node, NodeInfo, Tunnel, UserInfo};
+use crate::models::{CreateTunnelParams, Node, NodeInfo, Tunnel, UpdateTunnelParams, UserInfo};
 use serde::Deserialize;
 
 
@@ -86,6 +86,65 @@ async fn api_post<T: serde::de::DeserializeOwned>(
     }
 }
 
+async fn api_get_no_data(endpoint: &str, token: &str) -> Result<(), String> {
+    let client = build_client()?;
+    let url = format!("{}{}", API_BASE_URL, endpoint);
+
+    let response = client
+        .get(&url)
+        .header("authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {}", e))?;
+
+    let text = response
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {}", e))?;
+
+    let api_resp: ApiResponse<serde_json::Value> =
+        serde_json::from_str(&text).map_err(|e| format!("解析响应失败: {}", e))?;
+
+    if api_resp.code == 200 {
+        Ok(())
+    } else {
+        Err(api_resp.msg.unwrap_or_else(|| "请求失败".to_string()))
+    }
+}
+
+async fn api_post_no_data(
+    endpoint: &str,
+    token: &str,
+    body: &str,
+    content_type: &str,
+) -> Result<(), String> {
+    let client = build_client()?;
+    let url = format!("{}{}", API_BASE_URL, endpoint);
+
+    let response = client
+        .post(&url)
+        .header("authorization", format!("Bearer {}", token))
+        .header("Content-Type", content_type)
+        .body(body.to_string())
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {}", e))?;
+
+    let text = response
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {}", e))?;
+
+    let api_resp: ApiResponse<serde_json::Value> =
+        serde_json::from_str(&text).map_err(|e| format!("解析响应失败: {}", e))?;
+
+    if api_resp.code == 200 {
+        Ok(())
+    } else {
+        Err(api_resp.msg.unwrap_or_else(|| "请求失败".to_string()))
+    }
+}
+
 /// 获取用户信息
 pub async fn fetch_user_info(token: &str) -> Result<UserInfo, String> {
     api_get("/userinfo", token).await
@@ -105,6 +164,18 @@ pub async fn fetch_nodes(token: &str) -> Result<Vec<Node>, String> {
 pub async fn fetch_node_info(node_name: &str, token: &str) -> Result<NodeInfo, String> {
     let endpoint = format!("/nodeinfo?node={}", urlencoding::encode(node_name));
     api_get(&endpoint, token).await
+}
+
+/// 创建隧道
+pub async fn create_tunnel(params: &CreateTunnelParams, token: &str) -> Result<(), String> {
+    let body = serde_json::to_string(params).map_err(|e| format!("序列化请求失败: {}", e))?;
+    api_post_no_data("/create_tunnel", token, &body, "application/json").await
+}
+
+/// 更新隧道
+pub async fn update_tunnel(params: &UpdateTunnelParams, token: &str) -> Result<(), String> {
+    let body = serde_json::to_string(params).map_err(|e| format!("序列化请求失败: {}", e))?;
+    api_post_no_data("/update_tunnel", token, &body, "application/json").await
 }
 
 /// 下线隧道
@@ -143,6 +214,5 @@ pub async fn offline_tunnel(tunnel_name: &str, token: &str) -> Result<(), String
 
 /// 删除隧道
 pub async fn delete_tunnel(tunnel_id: i32, token: &str) -> Result<(), String> {
-    let _: serde_json::Value = api_get(&format!("/delete_tunnel?tunnelid={}", tunnel_id), token).await?;
-    Ok(())
+    api_get_no_data(&format!("/delete_tunnel?tunnelid={}", tunnel_id), token).await
 }

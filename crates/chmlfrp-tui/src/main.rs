@@ -1,4 +1,5 @@
 mod app;
+mod custom_tunnel;
 mod event;
 mod storage;
 mod ui;

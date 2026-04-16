@@ -1,13 +1,11 @@
-use crate::app::{App, LoginState, Screen, Tab};
+use crate::app::{App, LoginState, Screen, Tab, TunnelPageMode};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use std::time::Duration;
 
 /// 处理事件，返回 true 表示退出
 pub async fn handle_events(app: &mut App) -> Result<bool, Box<dyn std::error::Error>> {
-    // 收集日志和异步任务结果
     app.drain_events();
 
-    // 登录成功或启动后自动刷新隧道列表
     if app.needs_refresh {
         app.needs_refresh = false;
         app.refresh_tunnels().await;
@@ -16,8 +14,7 @@ pub async fn handle_events(app: &mut App) -> Result<bool, Box<dyn std::error::Er
         }
     }
 
-    // 当隧道加载完成后且需要自启时触发
-    if app.needs_auto_start && !app.tunnels.is_empty() {
+    if app.needs_auto_start {
         app.needs_auto_start = false;
         app.start_auto_tunnels().await;
     }
@@ -30,11 +27,10 @@ pub async fn handle_events(app: &mut App) -> Result<bool, Box<dyn std::error::Er
         return Ok(false);
     };
 
-    if key.kind != KeyEventKind::Press {
+    if matches!(key.kind, KeyEventKind::Release) {
         return Ok(false);
     }
 
-    // 退出确认
     if app.show_confirm_quit {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => return Ok(true),
@@ -45,7 +41,6 @@ pub async fn handle_events(app: &mut App) -> Result<bool, Box<dyn std::error::Er
         }
     }
 
-    // 全局快捷键处理
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return Ok(true);
     }
@@ -112,9 +107,27 @@ async fn handle_login_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn 
 }
 
 async fn handle_main_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn std::error::Error>> {
+    if app.is_editing_tunnel() {
+        return handle_tunnel_editor_keys(app, key).await;
+    }
+
+    if app.tab == Tab::Tunnels {
+        match app.tunnel_page_mode {
+            TunnelPageMode::OfficialNodeSelect => {
+                return handle_official_node_select_keys(app, key).await;
+            }
+            TunnelPageMode::OfficialForm => {
+                return handle_official_form_keys(app, key).await;
+            }
+            TunnelPageMode::ApiDeleteConfirm => {
+                return handle_api_delete_confirm_keys(app, key).await;
+            }
+            TunnelPageMode::List => {}
+        }
+    }
+
     match key {
         KeyCode::Char('q') => {
-            // 检查是否有运行中的隧道
             if !app.running_tunnels.is_empty() {
                 app.show_confirm_quit = true;
                 app.status_message = "有隧道运行中，按 y 确认退出（隧道将继续在后台运行）".to_string();
@@ -126,8 +139,8 @@ async fn handle_main_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn s
         KeyCode::Char('2') => app.tab = Tab::Logs,
         KeyCode::Char('3') => app.tab = Tab::Settings,
         KeyCode::Up | KeyCode::Char('k') => {
-            if app.tab == Tab::Tunnels && app.selected_tunnel > 0 {
-                app.selected_tunnel -= 1;
+            if app.tab == Tab::Tunnels {
+                app.move_tunnel_selection_up();
             }
             if app.tab == Tab::Logs && app.log_scroll > 0 {
                 app.log_scroll -= 1;
@@ -137,8 +150,8 @@ async fn handle_main_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn s
             }
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.tab == Tab::Tunnels && app.selected_tunnel + 1 < app.tunnels.len() {
-                app.selected_tunnel += 1;
+            if app.tab == Tab::Tunnels {
+                app.move_tunnel_selection_down();
             }
             if app.tab == Tab::Logs {
                 app.log_scroll += 1;
@@ -148,8 +161,8 @@ async fn handle_main_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn s
             }
         }
         KeyCode::Enter => {
-            if app.tab == Tab::Tunnels && !app.tunnels.is_empty() {
-                let tunnel_id = app.tunnels[app.selected_tunnel].id;
+            if app.tab == Tab::Tunnels && !app.tunnel_items.is_empty() {
+                let tunnel_id = app.selected_tunnel_id().unwrap_or_default();
                 if app.running_tunnels.contains(&tunnel_id) {
                     app.stop_selected_tunnel();
                 } else {
@@ -160,7 +173,6 @@ async fn handle_main_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn s
                     if app.is_systemd_installed {
                         app.status_message = "请手动执行 sudo systemctl disable --now chmlfrp-tui.service 并删除 service 文件".to_string();
                     } else {
-                        // TODO: Implement install_systemd_service call later
                         app.status_message = "请使用 sudo 安装 deb 包获取后台服务支持".to_string();
                     }
                 } else if app.selected_setting == 1 {
@@ -175,18 +187,29 @@ async fn handle_main_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn s
             }
         }
         KeyCode::Char('a') | KeyCode::Char('A') => {
-            if app.tab == Tab::Tunnels && !app.tunnels.is_empty() {
-                let tunnel_id = app.tunnels[app.selected_tunnel].id;
-                if app.settings.auto_start_tunnel_ids.contains(&tunnel_id) {
-                    app.settings.auto_start_tunnel_ids.retain(|&id| id != tunnel_id);
-                    app.status_message = format!("已取消隧道 {} (ID: {}) 的自启标记", app.tunnels[app.selected_tunnel].name, tunnel_id);
-                } else {
-                    app.settings.auto_start_tunnel_ids.push(tunnel_id);
-                    app.status_message = format!("隧道 {} (ID: {}) 已设为自动启动", app.tunnels[app.selected_tunnel].name, tunnel_id);
+            if app.tab == Tab::Tunnels {
+                if let Some(tunnel_id) = app.selected_tunnel_id() {
+                    let name = app
+                        .selected_tunnel_item()
+                        .map(|item| item.name().to_string())
+                        .unwrap_or_default();
+                    if app.settings.auto_start_tunnel_ids.contains(&tunnel_id) {
+                        app.settings.auto_start_tunnel_ids.retain(|&id| id != tunnel_id);
+                        app.status_message = format!("已取消隧道 {} (ID: {}) 的自启标记", name, tunnel_id);
+                    } else {
+                        app.settings.auto_start_tunnel_ids.push(tunnel_id);
+                        app.status_message = format!("隧道 {} (ID: {}) 已设为自动启动", name, tunnel_id);
+                    }
+                    let _ = crate::storage::save_settings(&app.settings);
                 }
-                let _ = crate::storage::save_settings(&app.settings);
             }
         }
+        KeyCode::Char('c') if app.tab == Tab::Tunnels => {
+            app.start_official_tunnel_creation().await;
+        }
+        KeyCode::Char('n') if app.tab == Tab::Tunnels => app.start_new_tunnel_editor(),
+        KeyCode::Char('e') if app.tab == Tab::Tunnels => app.start_edit_selected_tunnel().await,
+        KeyCode::Char('x') if app.tab == Tab::Tunnels => app.request_delete_selected_tunnel(),
         KeyCode::Char('r') => {
             app.refresh_tunnels().await;
         }
@@ -196,26 +219,83 @@ async fn handle_main_keys(app: &mut App, key: KeyCode) -> Result<bool, Box<dyn s
             }
         }
         KeyCode::Char('l') | KeyCode::Char('L') => {
-            // 注销
             app.stored_user = None;
             app.tunnels.clear();
+            app.tunnel_items.clear();
             app.running_tunnels.clear();
             app.screen = Screen::Login;
             let _ = crate::storage::clear_user();
             app.status_message = "已注销".to_string();
         }
         KeyCode::Char('o') | KeyCode::Char('O') => {
-            if app.tab == Tab::Tunnels && !app.tunnels.is_empty() {
-                let tunnel = &app.tunnels[app.selected_tunnel];
-                let url = if tunnel.tunnel_type == "http" || tunnel.tunnel_type == "https" {
-                    format!("{}://{}", tunnel.tunnel_type, tunnel.dorp)
-                } else {
-                    format!("http://{}:{}", tunnel.node_ip, tunnel.dorp)
-                };
-                let _ = open::that(&url);
-                app.status_message = format!("在浏览器中打开: {}", url);
+            if app.tab == Tab::Tunnels {
+                app.open_selected_tunnel_url();
             }
         }
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_tunnel_editor_keys(
+    app: &mut App,
+    key: KeyCode,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    match key {
+        KeyCode::Esc => app.cancel_tunnel_editor(),
+        KeyCode::Char('s') | KeyCode::Char('S') => app.save_tunnel_editor(),
+        KeyCode::Backspace => app.backspace_tunnel_editor(),
+        KeyCode::Enter => app.append_tunnel_editor_newline(),
+        KeyCode::Tab => {
+            for _ in 0..4 {
+                app.append_tunnel_editor_char(' ');
+            }
+        }
+        KeyCode::Char(ch) => app.append_tunnel_editor_char(ch),
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_official_node_select_keys(
+    app: &mut App,
+    key: KeyCode,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    match key {
+        KeyCode::Esc => app.cancel_official_node_select(),
+        KeyCode::Up | KeyCode::Char('k') => app.move_official_node_selection_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.move_official_node_selection_down(),
+        KeyCode::Enter => app.start_official_tunnel_form().await,
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_official_form_keys(
+    app: &mut App,
+    key: KeyCode,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    match key {
+        KeyCode::Esc => app.return_official_form_to_node_select(),
+        KeyCode::Up | KeyCode::Char('k') => app.move_official_form_field_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.move_official_form_field_down(),
+        KeyCode::Backspace => app.backspace_official_form(),
+        KeyCode::Tab => app.toggle_current_official_form_field(),
+        KeyCode::Char(' ') => app.toggle_current_official_form_field(),
+        KeyCode::Enter => app.submit_official_tunnel().await,
+        KeyCode::Char(ch) => app.append_official_form_char(ch),
+        _ => {}
+    }
+    Ok(false)
+}
+
+async fn handle_api_delete_confirm_keys(
+    app: &mut App,
+    key: KeyCode,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    match key {
+        KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => app.cancel_api_delete_confirm(),
+        KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => app.confirm_api_delete().await,
         _ => {}
     }
     Ok(false)
@@ -251,54 +331,36 @@ async fn start_device_login(app: &mut App) {
     app.login_result_rx = Some(rx);
 
     tokio::spawn(async move {
-        let result = chmlfrp_core::auth::poll_device_authorization(
-            &device_code,
-            interval,
-            expires_in,
-        )
-        .await;
-
-        match result {
-            Ok(token_resp) => {
-                if let Some(ref access_token) = token_resp.access_token {
-                    match chmlfrp_core::auth::login_with_access_token(access_token, &token_resp).await {
-                        Ok(user) => {
-                            let _ = tx.send(Ok(user));
-                        }
-                        Err(e) => {
-                            let _ = tx.send(Err(format!("获取用户信息失败: {}", e)));
-                        }
-                    }
+        let result = match chmlfrp_core::auth::poll_device_authorization(&device_code, interval, expires_in).await {
+            Ok(token_response) => {
+                if let Some(access_token) = token_response.access_token.as_deref() {
+                    chmlfrp_core::auth::login_with_access_token(access_token, &token_response).await
                 } else {
-                    let _ = tx.send(Err("授权成功但未返回 token".to_string()));
+                    Err("设备授权成功但未返回 access token".to_string())
                 }
             }
-            Err(e) => {
-                let _ = tx.send(Err(e));
-            }
-        }
+            Err(err) => Err(err),
+        };
+        let _ = tx.send(result);
     });
 }
 
 async fn start_download(app: &mut App) {
     app.is_downloading = true;
     app.download_progress = 0.0;
-    app.status_message = "正在下载 frpc...".to_string();
+    app.status_message = "开始下载 frpc...".to_string();
 
     let data_dir = app.data_dir.clone();
-
-    let (prog_tx, prog_rx) = tokio::sync::mpsc::unbounded_channel();
-    let (res_tx, res_rx) = tokio::sync::mpsc::unbounded_channel();
-
-    app.download_progress_rx = Some(prog_rx);
-    app.download_result_rx = Some(res_rx);
+    let (result_tx, result_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
+    app.download_result_rx = Some(result_rx);
+    app.download_progress_rx = Some(progress_rx);
 
     tokio::spawn(async move {
         let result = chmlfrp_core::download::download_frpc(&data_dir, move |progress| {
-            let _ = prog_tx.send(progress.percentage);
+            let _ = progress_tx.send(progress.percentage);
         })
         .await;
-
-        let _ = res_tx.send(result);
+        let _ = result_tx.send(result);
     });
 }

@@ -4,6 +4,39 @@ use std::process::Child;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct CreateTunnelParams {
+    pub tunnelname: String,
+    pub node: String,
+    pub localip: String,
+    pub porttype: String,
+    pub localport: u16,
+    pub encryption: bool,
+    pub compression: bool,
+    pub extraparams: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remoteport: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub banddomain: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UpdateTunnelParams {
+    pub tunnelid: i32,
+    pub tunnelname: String,
+    pub node: String,
+    pub localip: String,
+    pub porttype: String,
+    pub localport: u16,
+    pub encryption: bool,
+    pub compression: bool,
+    pub extraparams: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remoteport: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub banddomain: Option<String>,
+}
+
 /// 下载进度
 #[derive(Serialize, Clone, Debug)]
 pub struct DownloadProgress {
